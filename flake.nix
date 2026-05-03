@@ -91,7 +91,7 @@
     homeModules =
       import ./nix/home-modules.nix {inherit self lib;}
       // {
-        default = import ./nix/home-manager.nix {inherit self lib externalSources;};
+        default = import ./nix/home-manager.nix {inherit self externalSources;};
       };
   };
 }

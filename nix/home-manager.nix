@@ -2,11 +2,11 @@
 # Provides a single option to enable skills/agents and install them to configured directories.
 {
   self,
-  lib,
   externalSources,
 }: {
   config,
   pkgs,
+  lib,
   ...
 }: let
   cfg = config.programs.dot-agents;
