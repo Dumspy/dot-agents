@@ -177,8 +177,9 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    # --- Universal skills (to skillDirs, default ~/.agents/skills/) ---
+    # --- home.file ---
     home.file = lib.mkMerge [
+      # Universal skills (link mode only; rsync mode uses activation)
       (lib.mkIf (cfg.structure == "link" && enabledSkillNames != []) (
         lib.listToAttrs (lib.concatMap (dir:
           map (name: {
@@ -188,6 +189,7 @@ in {
           enabledSkillNames)
         cfg.skillDirs)
       ))
+      # Universal agents (link mode only)
       (lib.mkIf (cfg.structure == "link" && enabledAgentNames != []) (
         lib.listToAttrs (lib.concatMap (dir:
           map (name: {
@@ -196,6 +198,26 @@ in {
           })
           enabledAgentNames)
         cfg.agentDirs)
+      ))
+      # Pi-specific skills
+      (lib.mkIf (cfg.pi.skills != []) (
+        lib.listToAttrs (map (name: let
+            pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
+          in {
+            name = ".pi/agent/skills/${name}";
+            value.source = "${pkg}/share/skills/${name}";
+          })
+          cfg.pi.skills)
+      ))
+      # OpenCode-specific skills
+      (lib.mkIf (cfg.opencode.skills != []) (
+        lib.listToAttrs (map (name: let
+            pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
+          in {
+            name = ".config/opencode/skills/${name}";
+            value.source = "${pkg}/share/skills/${name}";
+          })
+          cfg.opencode.skills)
       ))
     ];
 
@@ -215,28 +237,6 @@ in {
           cfg.agentDirs)
       ))
     ];
-
-    # --- Pi-specific skills ---
-    home.file = lib.mkIf (cfg.pi.skills != []) (
-      lib.listToAttrs (map (name: let
-          pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
-        in {
-          name = ".pi/agent/skills/${name}";
-          value.source = "${pkg}/share/skills/${name}";
-        })
-        cfg.pi.skills)
-    );
-
-    # --- OpenCode-specific skills ---
-    home.file = lib.mkIf (cfg.opencode.skills != []) (
-      lib.listToAttrs (map (name: let
-          pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
-        in {
-          name = ".config/opencode/skills/${name}";
-          value.source = "${pkg}/share/skills/${name}";
-        })
-        cfg.opencode.skills)
-    );
 
     # --- OpenCode commands ---
     programs.opencode.commands = lib.mkIf (allCommands != {}) allCommands;
