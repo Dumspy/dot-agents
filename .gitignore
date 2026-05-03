@@ -1,0 +1,13 @@
+# Nix build results
+result
+result-*
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# OS
+.DS_Store

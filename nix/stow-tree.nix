@@ -7,8 +7,10 @@
   registry = import ./skills.nix {inherit externalSources;};
   system = pkgs.stdenv.hostPlatform.system;
 
-  # All skill packages
-  skillPkgs = self.packages.${system};
+  # All skill packages (filter to only registry entries to avoid self-reference)
+  skillPkgs = lib.genAttrs (builtins.attrNames registry) (
+    name: self.packages.${system}.${name}
+  );
 
   # Copy a skill into the tree
   copySkill = name: pkg: ''

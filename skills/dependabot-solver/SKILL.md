@@ -21,7 +21,7 @@ Gathers Dependabot security alert data and structures it for LLM-driven resoluti
 
 1. **Run from repository root on your desired branch**
     ```bash
-     ~/.config/opencode/skill/dependabot-solver/scripts/dependabot-solver.sh
+     ~/.config/opencode/skills/dependabot-solver/scripts/dependabot-solver.sh
     ```
 
 2. **Script returns JSON with**
@@ -39,12 +39,12 @@ Gathers Dependabot security alert data and structures it for LLM-driven resoluti
 
 ```bash
 # Get all alerts for current branch
-~/.config/opencode/skill/dependabot-solver/scripts/dependabot-solver.sh
+~/.config/opencode/skills/dependabot-solver/scripts/dependabot-solver.sh
 
 # Parse and use output
-ALERTS=$(~/.config/opencode/skill/dependabot-solver/scripts/dependabot-solver.sh | jq '.alerts')
-PKG_MANAGER=$(~/.config/opencode/skill/dependabot-solver/scripts/dependabot-solver.sh | jq -r '.package_manager')
-BASE_BRANCH=$(~/.config/opencode/skill/dependabot-solver/scripts/dependabot-solver.sh | jq -r '.base_branch')
+ALERTS=$(~/.config/opencode/skills/dependabot-solver/scripts/dependabot-solver.sh | jq '.alerts')
+PKG_MANAGER=$(~/.config/opencode/skills/dependabot-solver/scripts/dependabot-solver.sh | jq -r '.package_manager')
+BASE_BRANCH=$(~/.config/opencode/skills/dependabot-solver/scripts/dependabot-solver.sh | jq -r '.base_branch')
 ```
 
 ### Output Format

@@ -46,6 +46,18 @@
     lib.assertMsg (missingAgents == [])
     "dot-agents: unknown agent(s) requested: ${lib.concatStringsSep ", " missingAgents}. Available: ${lib.concatStringsSep ", " agentNames}";
 
+  # Validate that requested pi skills exist
+  missingPiSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.pi.skills;
+  _assertPiSkills =
+    lib.assertMsg (missingPiSkills == [])
+    "dot-agents: unknown skill(s) in pi.skills: ${lib.concatStringsSep ", " missingPiSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
+
+  # Validate that requested opencode skills exist
+  missingOpencodeSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.opencode.skills;
+  _assertOpencodeSkills =
+    lib.assertMsg (missingOpencodeSkills == [])
+    "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
+
   # Build a derivation containing all enabled skills
   skillsBundle = pkgs.runCommand "dot-agents-skills-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
@@ -64,6 +76,15 @@
         ln -s ${agentsDir}/${name}.md $out/${name}.md
       '')
       enabledAgentNames}
+  '';
+
+  # Build a derivation containing all enabled commands
+  commandsBundle = pkgs.runCommand "dot-agents-commands-bundle" {preferLocalBuild = true;} ''
+    mkdir -p $out
+    ${lib.concatMapStringsSep "\n" (name: ''
+        ln -s ${allCommands.${name}} $out/${name}.md
+      '')
+      (lib.attrNames allCommands)}
   '';
 
   # Auto-discover opencode commands
@@ -219,6 +240,14 @@ in {
           })
           cfg.opencode.skills)
       ))
+      # OpenCode commands (link mode only)
+      (lib.mkIf (cfg.structure == "link" && allCommands != {}) (
+        lib.listToAttrs (map (name: {
+            name = ".config/opencode/commands/${name}.md";
+            value.source = "${commandsBundle}/${name}.md";
+          })
+          (lib.attrNames allCommands))
+      ))
     ];
 
     home.activation = lib.mkMerge [
@@ -236,9 +265,10 @@ in {
           })
           cfg.agentDirs)
       ))
+      (lib.mkIf (cfg.structure != "link" && allCommands != {}) {
+        "install-dot-agents-commands" =
+          mkRsyncActivation commandsBundle "${config.home.homeDirectory}/.config/opencode/commands" cfg.structure;
+      })
     ];
-
-    # --- OpenCode commands ---
-    programs.opencode.commands = lib.mkIf (allCommands != {}) allCommands;
   };
 }
