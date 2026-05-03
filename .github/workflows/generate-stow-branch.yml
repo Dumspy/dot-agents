@@ -1,0 +1,56 @@
+name: Generate Stow Branch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  generate-stow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Build stow tree
+        run: |
+          nix build .#stow-tree --out-link ./result
+          # Copy the result to a home/ directory
+          mkdir -p home
+          cp -rL ./result/* home/
+
+      - name: Commit to stow branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if stow branch exists, create if not
+          if git show-ref --verify --quiet refs/heads/stow; then
+            git checkout stow
+          else
+            git checkout --orphan stow
+            git rm -rf .
+          fi
+
+          # Remove everything except .git
+          find . -mindepth 1 -not -path './.git/*' -not -name '.git' -delete
+
+          # Copy home directory
+          cp -r home/* .
+          rm -rf home
+
+          # Commit
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update stow tree from main ($(git rev-parse --short HEAD))"
+
+      - name: Push stow branch
+        run: git push origin stow --force
