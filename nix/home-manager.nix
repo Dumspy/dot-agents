@@ -36,13 +36,13 @@
 
   # Validate that requested skills exist
   missingSkills = lib.filter (name: !builtins.hasAttr name registry) enabledSkillNames;
-  _ =
+  _assertSkills =
     lib.assertMsg (missingSkills == [])
     "dot-agents: unknown skill(s) requested: ${lib.concatStringsSep ", " missingSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
   # Validate that requested agents exist
   missingAgents = lib.filter (name: !lib.elem name agentNames) enabledAgentNames;
-  _ =
+  _assertAgents =
     lib.assertMsg (missingAgents == [])
     "dot-agents: unknown agent(s) requested: ${lib.concatStringsSep ", " missingAgents}. Available: ${lib.concatStringsSep ", " agentNames}";
 
@@ -65,6 +65,25 @@
       '')
       enabledAgentNames}
   '';
+
+  # Auto-discover opencode commands
+  commandsDir = ../opencode/commands;
+  hasCommands = builtins.pathExists commandsDir;
+  commandFiles =
+    if hasCommands
+    then builtins.attrNames (builtins.readDir commandsDir)
+    else [];
+  commandNames = map (f: lib.removeSuffix ".md" f) (lib.filter (f: lib.hasSuffix ".md" f) commandFiles);
+  discoveredCommands = lib.listToAttrs (
+    map (name: {
+      inherit name;
+      value = commandsDir + "/${name}.md";
+    })
+    commandNames
+  );
+
+  # Merge user commands with discovered commands (user takes precedence)
+  allCommands = discoveredCommands // cfg.opencode.commands;
 
   # Install strategy helpers
   mkRsyncActivation = bundle: destPath: structure: let
@@ -220,8 +239,6 @@ in {
     );
 
     # --- OpenCode commands ---
-    programs.opencode.commands = lib.mkIf (cfg.opencode.commands != {}) (
-      cfg.opencode.commands
-    );
+    programs.opencode.commands = lib.mkIf (allCommands != {}) allCommands;
   };
 }
