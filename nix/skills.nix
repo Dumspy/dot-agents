@@ -28,14 +28,6 @@ in {
   "react-best-practices" = external externalSources.vercel-agent-skills "skills" "react-best-practices";
   "web-design-guidelines" = external externalSources.vercel-agent-skills "skills" "web-design-guidelines";
 
-  # --- Expo ---
-  "expo-api-routes" = external externalSources.expo-agent-skills "plugins/expo/skills" "expo-api-routes";
-  "building-native-ui" = external externalSources.expo-agent-skills "plugins/expo/skills" "building-native-ui";
-  "native-data-fetching" = external externalSources.expo-agent-skills "plugins/expo/skills" "native-data-fetching";
-  "expo-dev-client" = external externalSources.expo-agent-skills "plugins/expo/skills" "expo-dev-client";
-  "expo-tailwind-setup" = external externalSources.expo-agent-skills "plugins/expo/skills" "expo-tailwind-setup";
-  "use-dom" = external externalSources.expo-agent-skills "plugins/expo/skills" "use-dom";
-
   # --- Agent Browser ---
   "agent-browser" = external externalSources.agent-browser "skills" "agent-browser";
 

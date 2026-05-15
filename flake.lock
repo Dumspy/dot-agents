@@ -48,22 +48,6 @@
         "type": "github"
       }
     },
-    "expo-agent-skills": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1776955492,
-        "narHash": "sha256-j5xTQWdJN98vvbDiAQXVjS79q4XB+nkESoZOrNY0xWg=",
-        "owner": "expo",
-        "repo": "skills",
-        "rev": "93751dadf0494110893a9f7a2091ca14833d8212",
-        "type": "github"
-      },
-      "original": {
-        "owner": "expo",
-        "repo": "skills",
-        "type": "github"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -105,7 +89,6 @@
         "agent-browser": "agent-browser",
         "anthropics-agent-skills": "anthropics-agent-skills",
         "dex-agent-skills": "dex-agent-skills",
-        "expo-agent-skills": "expo-agent-skills",
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "sentry-skills": "sentry-skills",
