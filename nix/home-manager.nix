@@ -107,10 +107,8 @@
   # Build a derivation containing all enabled pi extensions
   piExtensionsBundle = pkgs.runCommand "dot-agents-pi-extensions-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
-    ${lib.concatMapStringsSep "\n" (name: ''
-        ln -s ${piExtensionsDir}/${name}.ts $out/${name}.ts
-      '')
-      enabledPiExtensions}
+    # Copy all extension files including subdirectories (e.g. permission-system/)
+    cp -rL ${piExtensionsDir}/* $out/
   '';
 
   # Generate permissions.json from Nix config
