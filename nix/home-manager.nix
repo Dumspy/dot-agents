@@ -109,6 +109,8 @@
     mkdir -p $out
     # Copy all extension files including subdirectories (e.g. permission-system/)
     cp -rL ${piExtensionsDir}/* $out/
+    # Copy node_modules from parent pi/ directory so extensions can resolve dependencies
+    cp -rL ${piExtensionsDir}/../node_modules $out/node_modules
   '';
 
   # Generate permissions.json from Nix config
