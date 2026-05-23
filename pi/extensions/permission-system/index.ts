@@ -15,7 +15,7 @@
  *     "read": {
  *       "*": "allow",
  *       ".env": "cloak",
- *       ".ssh/*": "deny"
+ *       ".ssh/**": "deny"
  *     },
  *     "bash": {
  *       "*": "ask",
@@ -38,9 +38,11 @@ import { join } from "node:path";
 import {
 	DEFAULT_CONFIG,
 	applyMask,
+	buildSessionApprovalKey,
 	deepMerge,
 	formatToolDescription,
 	getToolValue,
+	hardStop,
 	resolvePermission,
 	shouldMask,
 	type PermissionsConfig,
@@ -77,8 +79,11 @@ function loadConfig(cwd: string): PermissionsConfig {
 	return deepMerge(deepMerge(DEFAULT_CONFIG, globalConfig), projectConfig);
 }
 
+const SYSTEM_PROMPT_NOTICE = `Permission system is active. Some paths and tools are denied by policy. If a tool call is blocked, stop and report the restriction to the user — never use bash or another tool as a workaround.`;
+
 export default function permissionSystem(pi: ExtensionAPI) {
 	let config = DEFAULT_CONFIG;
+	const sessionApprovals = new Set<string>();
 
 	function reloadConfig(cwd: string) {
 		config = loadConfig(cwd);
@@ -86,6 +91,13 @@ export default function permissionSystem(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		reloadConfig(ctx.cwd);
+		sessionApprovals.clear();
+	});
+
+	pi.on("before_agent_start", async (event, _ctx) => {
+		return {
+			systemPrompt: `${event.systemPrompt}\n\n${SYSTEM_PROMPT_NOTICE}`,
+		};
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -102,20 +114,31 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		}
 
 		if (permission === "deny") {
-			return { block: true, reason: `Permission denied by policy: ${event.toolName} ${value}` };
+			return { block: true, reason: `Permission denied by policy: ${event.toolName} ${value}. ${hardStop()}` };
 		}
 
 		// permission === "ask"
 		if (!ctx.hasUI) {
-			return { block: true, reason: `Permission required (no UI): ${event.toolName} ${value}` };
+			return { block: true, reason: `Permission required (no UI): ${event.toolName} ${value}. ${hardStop()}` };
+		}
+
+		// Check session approvals
+		const approvalKey = buildSessionApprovalKey(event.toolName, value);
+		if (sessionApprovals.has(approvalKey)) {
+			return undefined;
 		}
 
 		const description = formatToolDescription(event.toolName, event.input as Record<string, unknown>);
 		const title = `Permission required\n\nThe agent wants to ${description}\n\nAllow this action?`;
 
-		const choice = await ctx.ui.select(title, ["Yes", "No", "Explain"]);
+		const choice = await ctx.ui.select(title, ["Yes", "Yes to session", "No", "Explain"]);
 
 		if (choice === "Yes") {
+			return undefined;
+		}
+
+		if (choice === "Yes to session") {
+			sessionApprovals.add(approvalKey);
 			return undefined;
 		}
 
@@ -129,11 +152,11 @@ export default function permissionSystem(pi: ExtensionAPI) {
 				// If steer fails, fall back to blocking without explanation
 				console.error(`[permissions] Failed to send explanation request: ${e}`);
 			}
-			return { block: true, reason: "User requested explanation before approving" };
+			return { block: true, reason: `User requested explanation before approving. ${hardStop()}` };
 		}
 
 		// "No" or cancelled
-		return { block: true, reason: "Blocked by user" };
+		return { block: true, reason: `Blocked by user. ${hardStop()}` };
 	});
 
 	pi.on("tool_result", async (event, _ctx) => {
@@ -203,6 +226,14 @@ export default function permissionSystem(pi: ExtensionAPI) {
 						const replaceInfo = mask.replace ? ` replace="${mask.replace}"` : "";
 						lines.push(`    ${pattern} -> /${mask.pattern}/${mask.flags ?? "g"}${replaceInfo}`);
 					}
+				}
+			}
+
+			if (sessionApprovals.size > 0) {
+				lines.push("");
+				lines.push(`Session approvals (${sessionApprovals.size}):`);
+				for (const key of sessionApprovals) {
+					lines.push(`  ${key}`);
 				}
 			}
 

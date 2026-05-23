@@ -5,6 +5,8 @@
  * No Pi APIs, no filesystem access, no side effects.
  */
 
+import { isMatch } from "picomatch";
+
 export type PermissionValue = "allow" | "deny" | "ask" | "cloak";
 
 export interface ToolPermissions {
@@ -39,41 +41,41 @@ export const DEFAULT_CONFIG: PermissionsConfig = {
 			"*.env": "cloak",
 			"*.env.*": "cloak",
 			"*.envrc": "deny",
-			"secrets/*": "deny",
-			".ssh/*": "deny",
-			".gnupg/*": "deny",
-			".config/1password/*": "deny",
+			"secrets/**": "deny",
+			".ssh/**": "deny",
+			".gnupg/**": "deny",
+			".config/1password/**": "deny",
 			"*.key": "deny",
 			"*.pem": "deny",
 			"*.p12": "deny",
 			"*.pfx": "deny",
-			".aws/*": "deny",
-			".docker/*": "deny",
-			".kube/*": "deny",
-			".git/*": "deny",
+			".aws/**": "deny",
+			".docker/**": "deny",
+			".kube/**": "deny",
+			".git/**": "deny",
 			".gitmodules": "deny",
-			"node_modules/*": "deny",
-			".venv/*": "deny",
-			"venv/*": "deny",
-			"dist/*": "deny",
-			"build/*": "deny",
-			"target/*": "deny",
+			"node_modules/**": "deny",
+			".venv/**": "deny",
+			"venv/**": "deny",
+			"dist/**": "deny",
+			"build/**": "deny",
+			"target/**": "deny",
 		},
 		write: {
 			"*": "ask",
 			".env": "deny",
-			".git/*": "deny",
-			"node_modules/*": "deny",
-			".venv/*": "deny",
-			"venv/*": "deny",
+			".git/**": "deny",
+			"node_modules/**": "deny",
+			".venv/**": "deny",
+			"venv/**": "deny",
 		},
 		edit: {
 			"*": "ask",
 			".env": "deny",
-			".git/*": "deny",
-			"node_modules/*": "deny",
-			".venv/*": "deny",
-			"venv/*": "deny",
+			".git/**": "deny",
+			"node_modules/**": "deny",
+			".venv/**": "deny",
+			"venv/**": "deny",
 		},
 		bash: {
 			"*": "ask",
@@ -128,38 +130,18 @@ export function deepMerge(base: PermissionsConfig, override: Partial<Permissions
 	return result;
 }
 
-/**
- * Simple glob matcher.
- * - `*` matches any sequence of characters except `/`
- * - `?` matches any single character except `/`
- */
-export function globToRegex(pattern: string): RegExp {
-	let regex = "^";
-	let i = 0;
-	while (i < pattern.length) {
-		if (pattern[i] === "*") {
-			regex += "[^/]*";
-			i += 1;
-		} else if (pattern[i] === "?") {
-			regex += "[^/]";
-			i += 1;
-		} else {
-			// Escape regex special characters
-			const c = pattern[i]!;
-			if (/[.+^${}()|[\]\\]/.test(c)) {
-				regex += "\\" + c;
-			} else {
-				regex += c;
-			}
-			i += 1;
-		}
-	}
-	regex += "$";
-	return new RegExp(regex);
+export function matchGlob(pattern: string, value: string): boolean {
+	return isMatch(value, pattern, { dot: true });
 }
 
-export function matchGlob(pattern: string, value: string): boolean {
-	return globToRegex(pattern).test(value);
+/**
+ * Strip the git-interceptor env prefix so permission rules match the actual command.
+ * The git-interceptor extension prepends this before permission-system sees the event.
+ */
+export const GIT_ENV_PREFIX = "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\n";
+
+function stripGitEnvPrefix(command: string): string {
+	return command.startsWith(GIT_ENV_PREFIX) ? command.slice(GIT_ENV_PREFIX.length) : command;
 }
 
 export function getToolValue(toolName: string, input: Record<string, unknown>): string {
@@ -168,8 +150,10 @@ export function getToolValue(toolName: string, input: Record<string, unknown>): 
 		case "write":
 		case "edit":
 			return String(input.path ?? "");
-		case "bash":
-			return String(input.command ?? "");
+		case "bash": {
+			const raw = String(input.command ?? "");
+			return stripGitEnvPrefix(raw);
+		}
 		case "webfetch":
 			return String(input.url ?? "");
 		default:
@@ -269,11 +253,29 @@ export function formatToolDescription(toolName: string, input: Record<string, un
 		case "write":
 		case "edit":
 			return `${toolName} \`${input.path}\``;
-		case "bash":
-			return `run \`${input.command}\``;
+		case "bash": {
+			const raw = String(input.command ?? "");
+			const command = stripGitEnvPrefix(raw);
+			return `run \`${command}\``;
+		}
 		case "webfetch":
 			return `fetch \`${input.url}\``;
 		default:
 			return `call ${toolName}`;
 	}
+}
+
+/**
+ * Hard stop suffix to append to denial reasons.
+ * Prevents the LLM from trying workarounds.
+ */
+export function hardStop(): string {
+	return "This permission denial is policy-enforced. Do not retry or investigate bypasses; report the block to the user.";
+}
+
+/**
+ * Build a session approval key from a tool name and its resolved value.
+ */
+export function buildSessionApprovalKey(toolName: string, value: string): string {
+	return `${toolName}:${value}`;
 }

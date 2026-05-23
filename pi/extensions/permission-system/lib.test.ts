@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_CONFIG,
 	applyMask,
+	buildSessionApprovalKey,
 	deepMerge,
 	formatToolDescription,
 	getToolValue,
-	globToRegex,
+	hardStop,
 	matchGlob,
 	resolveMask,
 	resolvePermission,
@@ -13,37 +14,31 @@ import {
 	type PermissionsConfig,
 } from "./lib.js";
 
-describe("globToRegex", () => {
+describe("matchGlob", () => {
 	it("matches literal strings exactly", () => {
-		const re = globToRegex("hello");
-		expect(re.test("hello")).toBe(true);
-		expect(re.test("hellos")).toBe(false);
-		expect(re.test("ahello")).toBe(false);
+		expect(matchGlob("hello", "hello")).toBe(true);
+		expect(matchGlob("hello", "hellos")).toBe(false);
+		expect(matchGlob("hello", "ahello")).toBe(false);
 	});
 
 	it("matches wildcard * against any chars except /", () => {
-		const re = globToRegex("*.ts");
-		expect(re.test("file.ts")).toBe(true);
-		expect(re.test(".ts")).toBe(true);
-		expect(re.test("a/b.ts")).toBe(false);
+		expect(matchGlob("*.ts", "file.ts")).toBe(true);
+		expect(matchGlob("*.ts", ".ts")).toBe(true);
+		expect(matchGlob("*.ts", "a/b.ts")).toBe(false);
 	});
 
-	it("matches wildcard ? against single char except /", () => {
-		const re = globToRegex("?env");
-		expect(re.test(".env")).toBe(true);
-		expect(re.test("xenv")).toBe(true);
-		expect(re.test("env")).toBe(false);
-		expect(re.test("xxenv")).toBe(false);
+	it("matches wildcard ? against single char", () => {
+		expect(matchGlob("?env", ".env")).toBe(true);
+		expect(matchGlob("?env", "xenv")).toBe(true);
+		expect(matchGlob("?env", "env")).toBe(false);
+		expect(matchGlob("?env", "xxenv")).toBe(false);
 	});
 
 	it("escapes regex special characters", () => {
-		const re = globToRegex("file.json");
-		expect(re.test("file.json")).toBe(true);
-		expect(re.test("file-json")).toBe(false);
+		expect(matchGlob("file.json", "file.json")).toBe(true);
+		expect(matchGlob("file.json", "file-json")).toBe(false);
 	});
-});
 
-describe("matchGlob", () => {
 	it("matches .env patterns", () => {
 		expect(matchGlob(".env", ".env")).toBe(true);
 		expect(matchGlob(".env", ".envrc")).toBe(false);
@@ -70,6 +65,25 @@ describe("matchGlob", () => {
 		expect(matchGlob("pwd", "pwd")).toBe(true);
 		expect(matchGlob("pwd", "pwds")).toBe(false);
 	});
+
+	// picomatch-specific features
+	it("matches ** across directories", () => {
+		expect(matchGlob("**/*.env", ".env")).toBe(true);
+		expect(matchGlob("**/*.env", "foo/.env")).toBe(true);
+		expect(matchGlob("**/*.env", "a/b/c/.env")).toBe(true);
+		expect(matchGlob("**/*.env", "foo.txt")).toBe(false);
+	});
+
+	it("matches brace expansion", () => {
+		expect(matchGlob("*.{ts,js}", "file.ts")).toBe(true);
+		expect(matchGlob("*.{ts,js}", "file.js")).toBe(true);
+		expect(matchGlob("*.{ts,js}", "file.py")).toBe(false);
+	});
+
+	it("matches dotfiles with dot option", () => {
+		expect(matchGlob("*.env", ".env")).toBe(true);
+		expect(matchGlob(".*", ".gitignore")).toBe(true);
+	});
 });
 
 describe("getToolValue", () => {
@@ -80,6 +94,13 @@ describe("getToolValue", () => {
 	});
 
 	it("extracts command from bash", () => {
+		expect(getToolValue("bash", { command: "ls -la" })).toBe("ls -la");
+	});
+
+	it("strips git-interceptor env prefix from bash commands", () => {
+		const prefix = "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\n";
+		expect(getToolValue("bash", { command: `${prefix}git status` })).toBe("git status");
+		expect(getToolValue("bash", { command: `${prefix}git commit -m "hello"` })).toBe('git commit -m "hello"');
 		expect(getToolValue("bash", { command: "ls -la" })).toBe("ls -la");
 	});
 
@@ -132,6 +153,13 @@ describe("resolvePermission", () => {
 	it("resolves cloak permission", () => {
 		const rules = { "*": "allow", ".env": "cloak" };
 		expect(resolvePermission(rules, ".env")).toBe("cloak");
+		expect(resolvePermission(rules, "foo.txt")).toBe("allow");
+	});
+
+	it("handles ** patterns", () => {
+		const rules = { "**/*.env": "deny", "*": "allow" };
+		expect(resolvePermission(rules, "config/.env")).toBe("deny");
+		expect(resolvePermission(rules, ".env")).toBe("deny");
 		expect(resolvePermission(rules, "foo.txt")).toBe("allow");
 	});
 });
@@ -288,11 +316,34 @@ describe("formatToolDescription", () => {
 		expect(formatToolDescription("bash", { command: "ls -la" })).toBe("run `ls -la`");
 	});
 
+	it("strips git-interceptor env prefix from bash description", () => {
+		const prefix = "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\n";
+		expect(formatToolDescription("bash", { command: `${prefix}git status` })).toBe("run `git status`");
+		expect(formatToolDescription("bash", { command: `${prefix}git commit -m "hello"` })).toBe('run `git commit -m "hello"`');
+		expect(formatToolDescription("bash", { command: "ls -la" })).toBe("run `ls -la`");
+	});
+
 	it("formats webfetch", () => {
 		expect(formatToolDescription("webfetch", { url: "https://example.com" })).toBe("fetch `https://example.com`");
 	});
 
 	it("formats unknown tools", () => {
 		expect(formatToolDescription("custom", {})).toBe("call custom");
+	});
+});
+
+describe("hardStop", () => {
+	it("returns the hard stop message", () => {
+		const message = hardStop();
+		expect(message).toContain("policy-enforced");
+		expect(message).toContain("Do not retry");
+		expect(message).toContain("report the block");
+	});
+});
+
+describe("buildSessionApprovalKey", () => {
+	it("builds a key from tool name and value", () => {
+		expect(buildSessionApprovalKey("bash", "git status")).toBe("bash:git status");
+		expect(buildSessionApprovalKey("read", ".env")).toBe("read:.env");
 	});
 });

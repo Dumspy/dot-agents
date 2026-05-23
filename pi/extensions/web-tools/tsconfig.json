@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
@@ -13,6 +13,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["extensions/**/*.ts"],
-  "exclude": ["extensions/**/*.test.ts"]
+  "include": ["./**/*.ts"],
+  "exclude": ["./test/**/*.test.ts"]
 }
