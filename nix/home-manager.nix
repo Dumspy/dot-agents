@@ -61,7 +61,6 @@
   # Auto-discover pi extensions
   piDir = ../pi;
   piExtensionsDir = piDir + "/extensions";
-  piNodeModulesDir = piDir + "/node_modules";
   hasPiExtensions = builtins.pathExists piExtensionsDir;
   piExtensionFiles =
     if hasPiExtensions
@@ -76,6 +75,40 @@
   _assertPiExtensions =
     lib.assertMsg (missingPiExtensions == [])
     "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
+
+  # Build node_modules for Pi extensions from npm registry (fixed-output derivation)
+  piNodeModules = pkgs.stdenvNoCC.mkDerivation {
+    name = "dot-agents-pi-node-modules";
+    src = pkgs.writeTextDir "package.json" (builtins.toJSON {
+      name = "pi-extensions-runtime";
+      version = "1.0.0";
+      dependencies = {
+        picomatch = "^4.0.4";
+        html-to-text = "^9.0.5";
+        linkedom = "^0.18.12";
+        turndown = "^7.2.0";
+        turndown-plugin-gfm = "^1.0.2";
+        typebox = "^0.34.0";
+      };
+    });
+    nativeBuildInputs = [pkgs.nodejs];
+    buildPhase = ''
+      runHook preBuild
+      cp $src/package.json ./package.json
+      npm install --ignore-scripts
+      runHook postBuild
+    '';
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out
+      cp -r node_modules $out/
+      runHook postInstall
+    '';
+    outputHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    outputHashAlgo = "sha256";
+    outputHashMode = "recursive";
+    dontFixup = true;
+  };
 
   # Build a derivation containing all enabled skills
   skillsBundle = pkgs.runCommand "dot-agents-skills-bundle" {preferLocalBuild = true;} ''
@@ -111,8 +144,8 @@
     mkdir -p $out
     # Copy all extension files including subdirectories (e.g. permission-system/)
     cp -rL ${piExtensionsDir}/* $out/
-    # Copy node_modules from pi/ directory so extensions can resolve dependencies
-    cp -rL ${piNodeModulesDir} $out/node_modules
+    # Copy node_modules built from npm registry dependencies
+    cp -rL ${piNodeModules}/node_modules $out/node_modules
   '';
 
   # Generate permissions.json from Nix config
