@@ -15,11 +15,6 @@
       flake = false;
     };
 
-    expo-agent-skills = {
-      url = "github:expo/skills";
-      flake = false;
-    };
-
     agent-browser = {
       url = "github:vercel-labs/agent-browser";
       flake = false;
@@ -46,7 +41,6 @@
     nixpkgs,
     home-manager,
     vercel-agent-skills,
-    expo-agent-skills,
     agent-browser,
     anthropics-agent-skills,
     dex-agent-skills,
@@ -72,7 +66,7 @@
 
     # External skill sources passed to the registry
     externalSources = {
-      inherit vercel-agent-skills expo-agent-skills agent-browser anthropics-agent-skills dex-agent-skills sentry-skills;
+      inherit vercel-agent-skills agent-browser anthropics-agent-skills dex-agent-skills sentry-skills;
     };
   in {
     packages = eachSystem (
