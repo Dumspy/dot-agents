@@ -52,13 +52,30 @@
     lib.assertMsg (missingPiSkills == [])
     "dot-agents: unknown skill(s) in pi.skills: ${lib.concatStringsSep ", " missingPiSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
-  # Validate that requested opencode skills exist
-  missingOpencodeSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.opencode.skills;
-  _assertOpencodeSkills =
-    lib.assertMsg (missingOpencodeSkills == [])
-    "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
+    # Validate that requested opencode skills exist
+    missingOpencodeSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.opencode.skills;
+    _assertOpencodeSkills =
+      lib.assertMsg (missingOpencodeSkills == [])
+      "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
-  # Build a derivation containing all enabled skills
+    # Auto-discover pi extensions
+    piExtensionsDir = ../pi/extensions;
+    hasPiExtensions = builtins.pathExists piExtensionsDir;
+    piExtensionFiles =
+      if hasPiExtensions
+      then builtins.attrNames (builtins.readDir piExtensionsDir)
+      else [];
+    piExtensionNames = map (f: lib.removeSuffix ".ts" f) (lib.filter (f: lib.hasSuffix ".ts" f) piExtensionFiles);
+    enabledPiExtensions =
+      if cfg.pi.extensions == null
+      then piExtensionNames
+      else cfg.pi.extensions;
+    missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
+    _assertPiExtensions =
+      lib.assertMsg (missingPiExtensions == [])
+      "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
+
+    # Build a derivation containing all enabled skills
   skillsBundle = pkgs.runCommand "dot-agents-skills-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
     ${lib.concatMapStringsSep "\n" (name: let
@@ -78,7 +95,7 @@
       enabledAgentNames}
   '';
 
-  # Build a derivation containing all enabled commands
+    # Build a derivation containing all enabled commands
   commandsBundle = pkgs.runCommand "dot-agents-commands-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
     ${lib.concatMapStringsSep "\n" (name: ''
@@ -86,6 +103,21 @@
       '')
       (lib.attrNames allCommands)}
   '';
+
+    # Build a derivation containing all enabled pi extensions
+  piExtensionsBundle = pkgs.runCommand "dot-agents-pi-extensions-bundle" {preferLocalBuild = true;} ''
+    mkdir -p $out
+    ${lib.concatMapStringsSep "\n" (name: ''
+        ln -s ${piExtensionsDir}/${name}.ts $out/${name}.ts
+      '')
+      enabledPiExtensions}
+  '';
+
+    # Generate permissions.json from Nix config
+  permissionsJson = pkgs.writeText "pi-permissions.json" (builtins.toJSON {
+    rules = cfg.pi.permissions;
+    masks = cfg.pi.masks;
+  });
 
   # Auto-discover opencode commands
   commandsDir = ../opencode/commands;
@@ -165,6 +197,74 @@ in {
         type = lib.types.listOf lib.types.str;
         default = [];
         description = "Pi-specific skills to install to ~/.pi/agent/skills/.";
+      };
+
+      extensions = lib.mkOption {
+        type = lib.types.nullOr (lib.types.listOf lib.types.str);
+        default = null;
+        description = ''
+          Pi-specific extensions to install to ~/.pi/agent/extensions/.
+          Set to `null` to auto-discover all extensions in pi/extensions/.
+          Set to `[]` to disable extensions.
+        '';
+      };
+
+      permissions = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.oneOf [lib.types.str (lib.types.attrsOf lib.types.str)]);
+        default = {};
+        description = ''
+          Pi permission rules, written to ~/.pi/agent/permissions.json under the `rules` key.
+          Each key is a tool name. The value is either:
+          - A single permission string: "allow", "deny", "ask", or "cloak"
+          - An attrset of glob patterns -> permission strings
+
+          Example:
+          {
+            read = {
+              "*" = "allow";
+              ".env" = "cloak";
+            };
+            bash = {
+              "*" = "ask";
+              "ls*" = "allow";
+            };
+            webfetch = "ask";
+          }
+        '';
+      };
+
+      masks = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.attrsOf (lib.types.submodule {
+          options = {
+            pattern = lib.mkOption {
+              type = lib.types.str;
+              description = "Regex pattern to match sensitive values.";
+            };
+            replace = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Replacement template (e.g. \"$1\"). Uses native JS replace semantics.";
+            };
+            flags = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Regex flags (e.g. \"g\", \"gi\"). Defaults to \"g\".";
+            };
+          };
+        }));
+        default = {};
+        description = ''
+          Mask patterns for the Pi permission system, written to ~/.pi/agent/permissions.json under the `masks` key.
+          Each top-level key is a tool name. Each inner key is a glob pattern matching the tool value (e.g. file path).
+          Only the `read` tool supports masking in v1.
+
+          Example:
+          {
+            read = {
+              ".env" = { pattern = "(=).+"; replace = "$1"; };
+            };
+          }
+        '';
       };
     };
 
@@ -248,6 +348,18 @@ in {
           })
           (lib.attrNames allCommands))
       ))
+      # Pi extensions
+      (lib.mkIf (enabledPiExtensions != []) (
+        lib.listToAttrs (map (name: {
+            name = ".pi/agent/extensions/${name}.ts";
+            value.source = "${piExtensionsBundle}/${name}.ts";
+          })
+          enabledPiExtensions)
+      ))
+      # Pi permissions
+      (lib.mkIf (cfg.pi.permissions != {} || cfg.pi.masks != {}) {
+        ".pi/agent/permissions.json".source = permissionsJson;
+      })
     ];
 
     home.activation = lib.mkMerge [
@@ -268,6 +380,10 @@ in {
       (lib.mkIf (cfg.structure != "link" && allCommands != {}) {
         "install-dot-agents-commands" =
           mkRsyncActivation commandsBundle "${config.home.homeDirectory}/.config/opencode/commands" cfg.structure;
+      })
+      (lib.mkIf (cfg.structure != "link" && enabledPiExtensions != []) {
+        "install-dot-agents-pi-extensions" =
+          mkRsyncActivation piExtensionsBundle "${config.home.homeDirectory}/.pi/agent/extensions" cfg.structure;
       })
     ];
   };

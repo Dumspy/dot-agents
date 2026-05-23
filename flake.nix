@@ -88,6 +88,15 @@
         }
     );
 
+    devShells = eachSystem ({pkgs, ...}: {
+      default = pkgs.mkShell {
+        packages = [pkgs.nodejs pkgs.rsync];
+        shellHook = ''
+          cd pi && npm install
+        '';
+      };
+    });
+
     homeModules =
       import ./nix/home-modules.nix {inherit self lib;}
       // {

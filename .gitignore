@@ -2,6 +2,9 @@
 result
 result-*
 
+# Node
+node_modules
+
 # Editor
 *.swp
 *.swo
