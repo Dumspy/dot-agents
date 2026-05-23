@@ -8,11 +8,8 @@
   # via self.packages. To avoid needing externalSources, we extract names from
   # skills.nix by providing dummy inputs (we never evaluate the path values).
   dummyInputs = {
-    vercel-agent-skills = ./.;
     agent-browser = ./.;
     anthropics-agent-skills = ./.;
-    dex-agent-skills = ./.;
-    sentry-skills = ./.;
   };
   registry = import ./skills.nix {externalSources = dummyInputs;};
 

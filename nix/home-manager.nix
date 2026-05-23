@@ -36,27 +36,15 @@
 
   # Validate that requested skills exist
   missingSkills = lib.filter (name: !builtins.hasAttr name registry) enabledSkillNames;
-  _assertSkills =
-    lib.assertMsg (missingSkills == [])
-    "dot-agents: unknown skill(s) requested: ${lib.concatStringsSep ", " missingSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
   # Validate that requested agents exist
   missingAgents = lib.filter (name: !lib.elem name agentNames) enabledAgentNames;
-  _assertAgents =
-    lib.assertMsg (missingAgents == [])
-    "dot-agents: unknown agent(s) requested: ${lib.concatStringsSep ", " missingAgents}. Available: ${lib.concatStringsSep ", " agentNames}";
 
   # Validate that requested pi skills exist
   missingPiSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.pi.skills;
-  _assertPiSkills =
-    lib.assertMsg (missingPiSkills == [])
-    "dot-agents: unknown skill(s) in pi.skills: ${lib.concatStringsSep ", " missingPiSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
   # Validate that requested opencode skills exist
   missingOpencodeSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.opencode.skills;
-  _assertOpencodeSkills =
-    lib.assertMsg (missingOpencodeSkills == [])
-    "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
   # Auto-discover pi extensions
   piDir = ../pi;
@@ -72,9 +60,6 @@
     then piExtensionNames
     else cfg.pi.extensions;
   missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
-  _assertPiExtensions =
-    lib.assertMsg (missingPiExtensions == [])
-    "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
 
   # Build node_modules for Pi extensions from npm registry (fixed-output derivation)
   piNodeModules = pkgs.stdenvNoCC.mkDerivation {
@@ -333,6 +318,29 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = missingSkills == [];
+        message = "dot-agents: unknown skill(s) requested: ${lib.concatStringsSep ", " missingSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
+      }
+      {
+        assertion = missingAgents == [];
+        message = "dot-agents: unknown agent(s) requested: ${lib.concatStringsSep ", " missingAgents}. Available: ${lib.concatStringsSep ", " agentNames}";
+      }
+      {
+        assertion = missingPiSkills == [];
+        message = "dot-agents: unknown skill(s) in pi.skills: ${lib.concatStringsSep ", " missingPiSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
+      }
+      {
+        assertion = missingOpencodeSkills == [];
+        message = "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
+      }
+      {
+        assertion = missingPiExtensions == [];
+        message = "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
+      }
+    ];
+
     # --- home.file ---
     home.file = lib.mkMerge [
       # Universal skills (link mode only; rsync mode uses activation)

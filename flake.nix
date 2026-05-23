@@ -10,11 +10,6 @@
     };
 
     # External skill sources
-    vercel-agent-skills = {
-      url = "github:vercel-labs/agent-skills";
-      flake = false;
-    };
-
     agent-browser = {
       url = "github:vercel-labs/agent-browser";
       flake = false;
@@ -24,27 +19,14 @@
       url = "github:anthropics/skills";
       flake = false;
     };
-
-    dex-agent-skills = {
-      url = "github:dcramer/dex";
-      flake = false;
-    };
-
-    sentry-skills = {
-      url = "github:getsentry/skills";
-      flake = false;
-    };
   };
 
   outputs = {
     self,
     nixpkgs,
     home-manager,
-    vercel-agent-skills,
     agent-browser,
     anthropics-agent-skills,
-    dex-agent-skills,
-    sentry-skills,
   }: let
     systems = [
       "x86_64-linux"
@@ -66,7 +48,7 @@
 
     # External skill sources passed to the registry
     externalSources = {
-      inherit vercel-agent-skills agent-browser anthropics-agent-skills dex-agent-skills sentry-skills;
+      inherit agent-browser anthropics-agent-skills;
     };
   in {
     packages = eachSystem (
