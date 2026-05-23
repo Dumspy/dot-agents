@@ -52,30 +52,30 @@
     lib.assertMsg (missingPiSkills == [])
     "dot-agents: unknown skill(s) in pi.skills: ${lib.concatStringsSep ", " missingPiSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
-    # Validate that requested opencode skills exist
-    missingOpencodeSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.opencode.skills;
-    _assertOpencodeSkills =
-      lib.assertMsg (missingOpencodeSkills == [])
-      "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
+  # Validate that requested opencode skills exist
+  missingOpencodeSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.opencode.skills;
+  _assertOpencodeSkills =
+    lib.assertMsg (missingOpencodeSkills == [])
+    "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
 
-    # Auto-discover pi extensions
-    piExtensionsDir = ../pi/extensions;
-    hasPiExtensions = builtins.pathExists piExtensionsDir;
-    piExtensionFiles =
-      if hasPiExtensions
-      then builtins.attrNames (builtins.readDir piExtensionsDir)
-      else [];
-    piExtensionNames = map (f: lib.removeSuffix ".ts" f) (lib.filter (f: lib.hasSuffix ".ts" f) piExtensionFiles);
-    enabledPiExtensions =
-      if cfg.pi.extensions == null
-      then piExtensionNames
-      else cfg.pi.extensions;
-    missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
-    _assertPiExtensions =
-      lib.assertMsg (missingPiExtensions == [])
-      "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
+  # Auto-discover pi extensions
+  piExtensionsDir = ../pi/extensions;
+  hasPiExtensions = builtins.pathExists piExtensionsDir;
+  piExtensionFiles =
+    if hasPiExtensions
+    then builtins.attrNames (builtins.readDir piExtensionsDir)
+    else [];
+  piExtensionNames = map (f: lib.removeSuffix ".ts" f) (lib.filter (f: lib.hasSuffix ".ts" f) piExtensionFiles);
+  enabledPiExtensions =
+    if cfg.pi.extensions == null
+    then piExtensionNames
+    else cfg.pi.extensions;
+  missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
+  _assertPiExtensions =
+    lib.assertMsg (missingPiExtensions == [])
+    "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
 
-    # Build a derivation containing all enabled skills
+  # Build a derivation containing all enabled skills
   skillsBundle = pkgs.runCommand "dot-agents-skills-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
     ${lib.concatMapStringsSep "\n" (name: let
@@ -95,7 +95,7 @@
       enabledAgentNames}
   '';
 
-    # Build a derivation containing all enabled commands
+  # Build a derivation containing all enabled commands
   commandsBundle = pkgs.runCommand "dot-agents-commands-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
     ${lib.concatMapStringsSep "\n" (name: ''
@@ -104,7 +104,7 @@
       (lib.attrNames allCommands)}
   '';
 
-    # Build a derivation containing all enabled pi extensions
+  # Build a derivation containing all enabled pi extensions
   piExtensionsBundle = pkgs.runCommand "dot-agents-pi-extensions-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
     ${lib.concatMapStringsSep "\n" (name: ''
@@ -113,7 +113,7 @@
       enabledPiExtensions}
   '';
 
-    # Generate permissions.json from Nix config
+  # Generate permissions.json from Nix config
   permissionsJson = pkgs.writeText "pi-permissions.json" (builtins.toJSON {
     rules = cfg.pi.permissions;
     masks = cfg.pi.masks;
@@ -348,8 +348,8 @@ in {
           })
           (lib.attrNames allCommands))
       ))
-      # Pi extensions
-      (lib.mkIf (enabledPiExtensions != []) (
+      # Pi extensions (link mode only; rsync mode uses activation)
+      (lib.mkIf (cfg.structure == "link" && enabledPiExtensions != []) (
         lib.listToAttrs (map (name: {
             name = ".pi/agent/extensions/${name}.ts";
             value.source = "${piExtensionsBundle}/${name}.ts";
