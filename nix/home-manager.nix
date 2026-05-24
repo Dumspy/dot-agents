@@ -91,11 +91,15 @@
   '';
 
   # Build a derivation containing all enabled pi extensions
+  # Build node_modules for Pi extensions with public npm deps
+  piNodeModules = pkgs.callPackage ./pi-node-modules.nix {};
+
   piExtensionsBundle = pkgs.runCommand "dot-agents-pi-extensions-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
-    # Copy all extension files including subdirectories (e.g. permission-system/).
-    # Pi handles extension runtime dependencies via its own node_modules.
+    # Copy all extension files including subdirectories (e.g. permission-system/)
     cp -rL ${piExtensionsDir}/* $out/
+    # Copy public npm deps that Pi does not provide
+    cp -rL ${piNodeModules}/node_modules $out/node_modules
   '';
 
   # Generate permissions.json from Nix config

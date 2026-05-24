@@ -61,7 +61,6 @@
           stow-tree = import ./nix/stow-tree.nix {
             inherit pkgs lib self externalSources;
           };
-
         }
     );
 
