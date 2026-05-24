@@ -13,54 +13,91 @@
       # Permission rules — mirrors the OpenCode permission system
       permissions = {
         read = {
-          "*" = "allow";
+          "**" = "allow";
           # Secrets & credentials
           ".direnv/*" = "deny";
+          "**/.direnv/*" = "deny";
           ".env" = "deny";
+          "**/.env" = "deny";
+          "**/*.env" = "deny";
           "*.env" = "deny";
           "*.env.*" = "deny";
+          "**/.env.*" = "deny";
+          "**/*.env.*" = "deny";
           "*.envrc" = "deny";
+          "**/*.envrc" = "deny";
           "secrets/*" = "deny";
+          "**/secrets/*" = "deny";
           # Private keys & auth
           ".ssh/*" = "deny";
+          "**/.ssh/*" = "deny";
           ".gnupg/*" = "deny";
+          "**/.gnupg/*" = "deny";
           ".config/1password/*" = "deny";
+          "**/.config/1password/*" = "deny";
           "*.key" = "deny";
+          "**/*.key" = "deny";
           "*.pem" = "deny";
+          "**/*.pem" = "deny";
           "*.p12" = "deny";
+          "**/*.p12" = "deny";
           "*.pfx" = "deny";
+          "**/*.pfx" = "deny";
           # Cloud/container credentials
           ".aws/*" = "deny";
+          "**/.aws/*" = "deny";
           ".docker/*" = "deny";
+          "**/.docker/*" = "deny";
           ".kube/*" = "deny";
+          "**/.kube/*" = "deny";
           # Version control internals
           ".git/*" = "deny";
+          "**/.git/*" = "deny";
           ".gitmodules" = "deny";
+          "**/.gitmodules" = "deny";
           # Build artifacts (large, noisy)
           "node_modules/*" = "deny";
+          "**/node_modules/*" = "deny";
           ".venv/*" = "deny";
+          "**/.venv/*" = "deny";
           "venv/*" = "deny";
+          "**/venv/*" = "deny";
           "dist/*" = "deny";
+          "**/dist/*" = "deny";
           "build/*" = "deny";
+          "**/build/*" = "deny";
           "target/*" = "deny";
+          "**/target/*" = "deny";
         };
 
         write = {
-          "*" = "ask";
+          "**" = "allow";
           ".env" = "deny";
+          "**/.env" = "deny";
+          "**/*.env" = "deny";
           ".git/*" = "deny";
+          "**/.git/*" = "deny";
           "node_modules/*" = "deny";
+          "**/node_modules/*" = "deny";
           ".venv/*" = "deny";
+          "**/.venv/*" = "deny";
           "venv/*" = "deny";
+          "**/venv/*" = "deny";
         };
 
         edit = {
-          "*" = "ask";
+          "**" = "allow";
           ".env" = "deny";
+          "**/.env" = "deny";
+          "**/*.env" = "deny";
           ".git/*" = "deny";
+          "**/.git/*" = "deny";
           "node_modules/*" = "deny";
+          "**/node_modules/*" = "deny";
           ".venv/*" = "deny";
+          "**/.venv/*" = "deny";
           "venv/*" = "deny";
+          "**/venv/*" = "deny";
         };
 
         bash = {

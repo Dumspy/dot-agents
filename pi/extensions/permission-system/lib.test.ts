@@ -276,7 +276,7 @@ describe("deepMerge", () => {
 		});
 		const readRules = merged.rules.read as Record<string, string>;
 		expect(readRules["*.secret"]).toBe("deny");
-		expect(readRules["*"]).toBe("allow"); // base preserved
+		expect(readRules["**"]).toBe("allow"); // base preserved
 	});
 
 	it("replaces object rules with string rules", () => {
@@ -303,6 +303,206 @@ describe("deepMerge", () => {
 		});
 		expect(merged.masks.bash).toBeDefined();
 		expect(merged.masks.bash["*"]).toEqual({ pattern: "token" });
+	});
+});
+
+describe("DEFAULT_CONFIG — intended behavior", () => {
+	const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
+	const writeRules = DEFAULT_CONFIG.rules.write as Record<string, string>;
+	const editRules = DEFAULT_CONFIG.rules.edit as Record<string, string>;
+	const bashRules = DEFAULT_CONFIG.rules.bash as Record<string, string>;
+	const webfetchRule = DEFAULT_CONFIG.rules.webfetch;
+
+	describe("read — allow by default, deny/cloak on sensitive paths", () => {
+		it("allows non-sensitive files at root", () => {
+			expect(resolvePermission(readRules, "README.md")).toBe("allow");
+			expect(resolvePermission(readRules, "src/index.ts")).toBe("allow");
+			expect(resolvePermission(readRules, "docs/guide.md")).toBe("allow");
+		});
+
+		it("cloaks .env files at any depth", () => {
+			expect(resolvePermission(readRules, ".env")).toBe("cloak");
+			expect(resolvePermission(readRules, "packages/api/.env")).toBe("cloak");
+			expect(resolvePermission(readRules, "/home/user/project/.env")).toBe("cloak");
+		});
+
+		it("cloaks .env.* files at any depth", () => {
+			expect(resolvePermission(readRules, ".env.local")).toBe("cloak");
+			expect(resolvePermission(readRules, "packages/api/.env.production")).toBe("cloak");
+		});
+
+		it("cloaks *.env files at any depth", () => {
+			expect(resolvePermission(readRules, "foo.env")).toBe("cloak");
+			expect(resolvePermission(readRules, "config/foo.env")).toBe("cloak");
+		});
+
+		it("denies .git/ content at any depth", () => {
+			expect(resolvePermission(readRules, ".git/config")).toBe("deny");
+			expect(resolvePermission(readRules, ".git/HEAD")).toBe("deny");
+			expect(resolvePermission(readRules, "packages/frontend/.git/config")).toBe("deny");
+			expect(resolvePermission(readRules, "/home/user/project/.git/config")).toBe("deny");
+		});
+
+		it("denies .gitmodules at any depth", () => {
+			expect(resolvePermission(readRules, ".gitmodules")).toBe("deny");
+			expect(resolvePermission(readRules, "submodule/.gitmodules")).toBe("deny");
+		});
+
+		it("denies .ssh/ content at any depth", () => {
+			expect(resolvePermission(readRules, ".ssh/id_rsa")).toBe("deny");
+			expect(resolvePermission(readRules, "deep/.ssh/id_rsa")).toBe("deny");
+		});
+
+		it("denies .aws/ .docker/ .kube/ at any depth", () => {
+			expect(resolvePermission(readRules, ".aws/credentials")).toBe("deny");
+			expect(resolvePermission(readRules, "config/.aws/credentials")).toBe("deny");
+			expect(resolvePermission(readRules, ".docker/config.json")).toBe("deny");
+			expect(resolvePermission(readRules, "project/.docker/config.json")).toBe("deny");
+			expect(resolvePermission(readRules, ".kube/config")).toBe("deny");
+			expect(resolvePermission(readRules, "home/user/.kube/config")).toBe("deny");
+		});
+
+		it("denies key/pem/p12/pfx files at any depth", () => {
+			expect(resolvePermission(readRules, "id_rsa.key")).toBe("deny");
+			expect(resolvePermission(readRules, ".ssh/id_rsa.key")).toBe("deny");
+			expect(resolvePermission(readRules, "certs/server.pem")).toBe("deny");
+			expect(resolvePermission(readRules, "/etc/ssl/cert.p12")).toBe("deny");
+			expect(resolvePermission(readRules, "cert.pfx")).toBe("deny");
+		});
+
+		it("denies node_modules/ at any depth", () => {
+			expect(resolvePermission(readRules, "node_modules/express/index.js")).toBe("deny");
+			expect(resolvePermission(readRules, "packages/frontend/node_modules/lodash/index.js")).toBe("deny");
+		});
+
+		it("denies .venv/ venv/ at any depth", () => {
+			expect(resolvePermission(readRules, ".venv/bin/python")).toBe("deny");
+			expect(resolvePermission(readRules, "project/.venv/bin/python")).toBe("deny");
+			expect(resolvePermission(readRules, "venv/bin/python")).toBe("deny");
+			expect(resolvePermission(readRules, "project/venv/bin/python")).toBe("deny");
+		});
+
+		it("denies dist/ build/ target/ at any depth", () => {
+			expect(resolvePermission(readRules, "dist/bundle.js")).toBe("deny");
+			expect(resolvePermission(readRules, "project/dist/bundle.js")).toBe("deny");
+			expect(resolvePermission(readRules, "build/output")).toBe("deny");
+			expect(resolvePermission(readRules, "project/build/output")).toBe("deny");
+			expect(resolvePermission(readRules, "target/debug/app")).toBe("deny");
+			expect(resolvePermission(readRules, "project/target/debug/app")).toBe("deny");
+		});
+
+		it("denies secrets/ at any depth", () => {
+			expect(resolvePermission(readRules, "secrets/db.txt")).toBe("deny");
+			expect(resolvePermission(readRules, "config/secrets/db.txt")).toBe("deny");
+		});
+
+		it("denies .envrc at any depth", () => {
+			expect(resolvePermission(readRules, ".envrc")).toBe("deny");
+			expect(resolvePermission(readRules, "project/.envrc")).toBe("deny");
+		});
+
+		it("denies .gnupg/ at any depth", () => {
+			expect(resolvePermission(readRules, ".gnupg/gpg.conf")).toBe("deny");
+			expect(resolvePermission(readRules, "home/.gnupg/gpg.conf")).toBe("deny");
+		});
+
+		it("denies .config/1password/ at any depth", () => {
+			expect(resolvePermission(readRules, ".config/1password/account.json")).toBe("deny");
+			expect(resolvePermission(readRules, "home/.config/1password/account.json")).toBe("deny");
+		});
+	});
+
+	describe("write — allow by default, deny on sensitive paths", () => {
+		it("allows non-sensitive files", () => {
+			expect(resolvePermission(writeRules, "src/index.ts")).toBe("allow");
+			expect(resolvePermission(writeRules, "README.md")).toBe("allow");
+		});
+
+		it("denies .env files at any depth", () => {
+			expect(resolvePermission(writeRules, ".env")).toBe("deny");
+			expect(resolvePermission(writeRules, "packages/api/.env")).toBe("deny");
+		});
+
+		it("denies .git/ content at any depth", () => {
+			expect(resolvePermission(writeRules, ".git/config")).toBe("deny");
+			expect(resolvePermission(writeRules, "packages/frontend/.git/config")).toBe("deny");
+		});
+
+		it("denies node_modules/ at any depth", () => {
+			expect(resolvePermission(writeRules, "node_modules/express/index.js")).toBe("deny");
+			expect(resolvePermission(writeRules, "packages/frontend/node_modules/lodash/index.js")).toBe("deny");
+		});
+
+		it("denies .venv/ venv/ at any depth", () => {
+			expect(resolvePermission(writeRules, ".venv/bin/python")).toBe("deny");
+			expect(resolvePermission(writeRules, "project/.venv/bin/python")).toBe("deny");
+			expect(resolvePermission(writeRules, "venv/bin/python")).toBe("deny");
+			expect(resolvePermission(writeRules, "project/venv/bin/python")).toBe("deny");
+		});
+	});
+
+	describe("edit — allow by default, deny on sensitive paths", () => {
+		it("allows non-sensitive files", () => {
+			expect(resolvePermission(editRules, "src/index.ts")).toBe("allow");
+			expect(resolvePermission(editRules, "README.md")).toBe("allow");
+		});
+
+		it("denies .env files at any depth", () => {
+			expect(resolvePermission(editRules, ".env")).toBe("deny");
+			expect(resolvePermission(editRules, "packages/api/.env")).toBe("deny");
+		});
+
+		it("denies .git/ content at any depth", () => {
+			expect(resolvePermission(editRules, ".git/config")).toBe("deny");
+			expect(resolvePermission(editRules, "packages/frontend/.git/config")).toBe("deny");
+		});
+
+		it("denies node_modules/ at any depth", () => {
+			expect(resolvePermission(editRules, "node_modules/express/index.js")).toBe("deny");
+			expect(resolvePermission(editRules, "packages/frontend/node_modules/lodash/index.js")).toBe("deny");
+		});
+
+		it("denies .venv/ venv/ at any depth", () => {
+			expect(resolvePermission(editRules, ".venv/bin/python")).toBe("deny");
+			expect(resolvePermission(editRules, "project/.venv/bin/python")).toBe("deny");
+			expect(resolvePermission(editRules, "venv/bin/python")).toBe("deny");
+			expect(resolvePermission(editRules, "project/venv/bin/python")).toBe("deny");
+		});
+	});
+
+	describe("bash — ask by default, allow on safe commands", () => {
+		it("allows ls commands", () => {
+			expect(resolvePermission(bashRules, "ls -la")).toBe("allow");
+			expect(resolvePermission(bashRules, "ls")).toBe("allow");
+		});
+
+		it("allows pwd", () => {
+			expect(resolvePermission(bashRules, "pwd")).toBe("allow");
+		});
+
+		it("allows git status/diff/log", () => {
+			expect(resolvePermission(bashRules, "git status")).toBe("allow");
+			expect(resolvePermission(bashRules, "git status -s")).toBe("allow");
+			expect(resolvePermission(bashRules, "git diff")).toBe("allow");
+			expect(resolvePermission(bashRules, "git log --oneline")).toBe("allow");
+		});
+
+		it("allows dex commands", () => {
+			expect(resolvePermission(bashRules, "dex run -a")).toBe("allow");
+		});
+
+		it("asks for other commands", () => {
+			expect(resolvePermission(bashRules, "rm -rf /")).toBe("ask");
+			expect(resolvePermission(bashRules, "curl example.com")).toBe("ask");
+		});
+	});
+
+	describe("webfetch — ask by default", () => {
+		it("asks for any URL", () => {
+			expect(webfetchRule).toBe("ask");
+			expect(resolvePermission(webfetchRule, "https://example.com")).toBe("ask");
+			expect(resolvePermission(webfetchRule, "http://localhost")).toBe("ask");
+		});
 	});
 });
 
