@@ -379,6 +379,14 @@ describe("DEFAULT_CONFIG — intended behavior", () => {
 			expect(resolvePermission(readRules, "packages/frontend/node_modules/lodash/index.js")).toBe("deny");
 		});
 
+		it("allows pi docs inside node_modules", () => {
+			expect(resolvePermission(readRules, "node_modules/@earendil-works/pi-coding-agent/README.md")).toBe("allow");
+			expect(resolvePermission(readRules, "node_modules/@earendil-works/pi-coding-agent/docs/extensions.md")).toBe("allow");
+			expect(resolvePermission(readRules, "/nix/store/abc/lib/node_modules/@earendil-works/pi-coding-agent/README.md")).toBe("allow");
+			expect(resolvePermission(readRules, "node_modules/@earendil-works/pi-ai/index.js")).toBe("allow");
+			expect(resolvePermission(readRules, "node_modules/@earendil-works/pi-tui/index.js")).toBe("allow");
+		});
+
 		it("denies .venv/ venv/ at any depth", () => {
 			expect(resolvePermission(readRules, ".venv/bin/python")).toBe("deny");
 			expect(resolvePermission(readRules, "project/.venv/bin/python")).toBe("deny");
@@ -685,6 +693,31 @@ describe("External directory + tool rule interaction", () => {
 
 		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
 		expect(resolvePermission(readRules, externalPath)).toBe("deny");
+	});
+
+	it("external node_modules path is denied by read rules after external approval", () => {
+		// Normal rules still apply after external directory approval.
+		// The fix for pi docs is the default allow rules in lib.ts, not a bypass.
+		const cwd = "/home/project";
+		const externalPath = "/nix/store/abc123/lib/node_modules/@pkg/README.md";
+
+		const extRoot = getExternalDirectoryRoot(externalPath, cwd);
+		expect(extRoot).toBe("/nix");
+		const extRules = DEFAULT_CONFIG.rules.external_directory as Record<string, string>;
+		expect(resolvePermission(extRules, extRoot)).toBe("ask");
+
+		// Normal read rules deny node_modules
+		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
+		expect(resolvePermission(readRules, externalPath)).toBe("deny");
+	});
+
+	it("external pi docs are allowed by default read rules", () => {
+		// Pi docs live in node_modules under /nix/store or similar external paths.
+		// The specific allow rules override the node_modules deny.
+		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
+		expect(resolvePermission(readRules, "/nix/store/abc/lib/node_modules/@earendil-works/pi-coding-agent/README.md")).toBe("allow");
+		expect(resolvePermission(readRules, "/nix/store/abc/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md")).toBe("allow");
+		expect(resolvePermission(readRules, "/nix/store/abc/lib/node_modules/@earendil-works/pi-ai/index.js")).toBe("allow");
 	});
 
 	it("internal .env path skips external gate but still gets cloaked", () => {

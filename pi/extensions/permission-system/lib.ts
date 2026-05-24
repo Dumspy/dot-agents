@@ -123,6 +123,10 @@ export const DEFAULT_CONFIG: PermissionsConfig = {
 			"**/.git/**": "deny",
 			".gitmodules": "deny",
 			"**/.gitmodules": "deny",
+			// Pi docs live inside node_modules; allow reading them
+			"**/node_modules/@earendil-works/pi-ai/**": "allow",
+			"**/node_modules/@earendil-works/pi-coding-agent/**": "allow",
+			"**/node_modules/@earendil-works/pi-tui/**": "allow",
 			"node_modules/**": "deny",
 			"**/node_modules/**": "deny",
 			".venv/**": "deny",
