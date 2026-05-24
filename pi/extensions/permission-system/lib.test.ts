@@ -5,11 +5,15 @@ import {
 	buildSessionApprovalKey,
 	deepMerge,
 	formatToolDescription,
+	getExternalDirectoryRoot,
 	getToolValue,
 	hardStop,
+	isExternalPath,
+	isPathBasedTool,
 	matchGlob,
 	resolveMask,
 	resolvePermission,
+	resolveToolPath,
 	shouldMask,
 	type PermissionsConfig,
 } from "./lib.js";
@@ -545,5 +549,154 @@ describe("buildSessionApprovalKey", () => {
 	it("builds a key from tool name and value", () => {
 		expect(buildSessionApprovalKey("bash", "git status")).toBe("bash:git status");
 		expect(buildSessionApprovalKey("read", ".env")).toBe("read:.env");
+	});
+});
+
+describe("isPathBasedTool", () => {
+	it("returns true for path-based tools", () => {
+		expect(isPathBasedTool("read")).toBe(true);
+		expect(isPathBasedTool("write")).toBe(true);
+		expect(isPathBasedTool("edit")).toBe(true);
+		expect(isPathBasedTool("ls")).toBe(true);
+	});
+
+	it("returns false for non-path tools", () => {
+		expect(isPathBasedTool("bash")).toBe(false);
+		expect(isPathBasedTool("webfetch")).toBe(false);
+		expect(isPathBasedTool("custom")).toBe(false);
+	});
+});
+
+describe("resolveToolPath", () => {
+	it("resolves relative paths against cwd", () => {
+		expect(resolveToolPath("read", { path: "../file.txt" }, "/home/project")).toBe("/home/file.txt");
+		expect(resolveToolPath("write", { path: "src/index.ts" }, "/home/project")).toBe("/home/project/src/index.ts");
+	});
+
+	it("resolves absolute paths as-is", () => {
+		expect(resolveToolPath("read", { path: "/etc/passwd" }, "/home/project")).toBe("/etc/passwd");
+	});
+
+	it("returns null for empty paths", () => {
+		expect(resolveToolPath("read", { path: "" }, "/home/project")).toBeNull();
+		expect(resolveToolPath("ls", { path: undefined }, "/home/project")).toBeNull();
+	});
+
+	it("returns null for non-path tools", () => {
+		expect(resolveToolPath("bash", { command: "ls" }, "/home/project")).toBeNull();
+		expect(resolveToolPath("webfetch", { url: "https://example.com" }, "/home/project")).toBeNull();
+	});
+});
+
+describe("isExternalPath", () => {
+	it("returns false for paths inside cwd", () => {
+		expect(isExternalPath("/home/project/src/index.ts", "/home/project")).toBe(false);
+		expect(isExternalPath("/home/project", "/home/project")).toBe(false);
+		expect(isExternalPath("/home/project/.env", "/home/project")).toBe(false);
+	});
+
+	it("returns true for paths outside cwd", () => {
+		expect(isExternalPath("/home/other/file.txt", "/home/project")).toBe(true);
+		expect(isExternalPath("/tmp/file.txt", "/home/project")).toBe(true);
+		expect(isExternalPath("/home/project/../other", "/home/project")).toBe(true);
+	});
+
+	it("handles relative resolved paths correctly", () => {
+		// resolveToolPath already resolves, but let's test isExternalPath directly
+		expect(isExternalPath("/home/file.txt", "/home/project")).toBe(true);
+	});
+});
+
+describe("getExternalDirectoryRoot", () => {
+	it("returns null for paths inside cwd", () => {
+		expect(getExternalDirectoryRoot("/home/project/src/index.ts", "/home/project")).toBeNull();
+		expect(getExternalDirectoryRoot("/home/project", "/home/project")).toBeNull();
+	});
+
+	it("returns sibling directory root", () => {
+		expect(getExternalDirectoryRoot("/home/other/file.txt", "/home/project")).toBe("/home/other");
+	});
+
+	it("returns exact path when target has no deeper directory", () => {
+		expect(getExternalDirectoryRoot("/home/file.txt", "/home/project")).toBe("/home/file.txt");
+	});
+
+	it("returns deeply external directory root", () => {
+		expect(getExternalDirectoryRoot("/home/other/deep/file.txt", "/home/project")).toBe("/home/other");
+	});
+
+	it("returns root for completely different paths", () => {
+		expect(getExternalDirectoryRoot("/tmp/file.txt", "/home/project")).toBe("/tmp");
+	});
+
+	it("handles paths resolved via .. correctly", () => {
+		expect(getExternalDirectoryRoot("/home/project/../other/file.txt", "/home/project")).toBe("/home/other");
+	});
+});
+
+describe("DEFAULT_CONFIG — external_directory", () => {
+	const extRules = DEFAULT_CONFIG.rules.external_directory as Record<string, string>;
+
+	it("defaults to ask for any external directory", () => {
+		expect(resolvePermission(extRules, "/home/other")).toBe("ask");
+		expect(resolvePermission(extRules, "/tmp")).toBe("ask");
+		expect(resolvePermission(extRules, "/home/project/../other")).toBe("ask");
+	});
+});
+
+describe("External directory + tool rule interaction", () => {
+	it("external path triggers ask, and .env still gets cloaked after approval", () => {
+		const cwd = "/home/project";
+		const externalPath = "/home/other/.env";
+
+		// Step 1: external_directory gate fires first
+		const extRoot = getExternalDirectoryRoot(externalPath, cwd);
+		expect(extRoot).toBe("/home/other");
+		const extRules = DEFAULT_CONFIG.rules.external_directory as Record<string, string>;
+		expect(resolvePermission(extRules, extRoot)).toBe("ask");
+
+		// Step 2: after external approval, normal read rules still apply
+		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
+		expect(resolvePermission(readRules, externalPath)).toBe("cloak");
+	});
+
+	it("external .envrc file triggers ask then deny", () => {
+		const cwd = "/home/project";
+		const externalPath = "/home/other/.envrc";
+
+		const extRoot = getExternalDirectoryRoot(externalPath, cwd);
+		expect(extRoot).toBe("/home/other");
+		const extRules = DEFAULT_CONFIG.rules.external_directory as Record<string, string>;
+		expect(resolvePermission(extRules, extRoot)).toBe("ask");
+
+		// After external approval, .envrc is denied by read rules
+		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
+		expect(resolvePermission(readRules, externalPath)).toBe("deny");
+	});
+
+	it("external ssh key triggers ask then deny", () => {
+		const cwd = "/home/project";
+		const externalPath = "/home/other/.ssh/id_rsa";
+
+		const extRoot = getExternalDirectoryRoot(externalPath, cwd);
+		expect(extRoot).toBe("/home/other");
+		const extRules = DEFAULT_CONFIG.rules.external_directory as Record<string, string>;
+		expect(resolvePermission(extRules, extRoot)).toBe("ask");
+
+		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
+		expect(resolvePermission(readRules, externalPath)).toBe("deny");
+	});
+
+	it("internal .env path skips external gate but still gets cloaked", () => {
+		const cwd = "/home/project";
+		const internalPath = "/home/project/packages/api/.env";
+
+		// Inside workspace — no external gate
+		expect(isExternalPath(internalPath, cwd)).toBe(false);
+		expect(getExternalDirectoryRoot(internalPath, cwd)).toBeNull();
+
+		// But read rules still apply
+		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
+		expect(resolvePermission(readRules, internalPath)).toBe("cloak");
 	});
 });

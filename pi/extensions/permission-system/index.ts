@@ -22,7 +22,11 @@
  *       "ls*": "allow",
  *       "git status*": "allow"
  *     },
- *     "webfetch": "ask"
+ *     "webfetch": "ask",
+ *     "external_directory": {
+ *       "**": "ask",
+ *       "~/projects/personal/**": "allow"
+ *     }
  *   },
  *   "masks": {
  *     "read": {
@@ -41,9 +45,11 @@ import {
 	buildSessionApprovalKey,
 	deepMerge,
 	formatToolDescription,
+	getExternalDirectoryRoot,
 	getToolValue,
 	hardStop,
 	resolvePermission,
+	resolveToolPath,
 	shouldMask,
 	type PermissionsConfig,
 } from "./lib.js";
@@ -101,6 +107,45 @@ export default function permissionSystem(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		// --- External directory gate ---
+		const resolvedPath = resolveToolPath(event.toolName, event.input as Record<string, unknown>, ctx.cwd);
+		if (resolvedPath) {
+			const extDirRoot = getExternalDirectoryRoot(resolvedPath, ctx.cwd);
+			if (extDirRoot) {
+				const extRules = config.rules.external_directory;
+				const extPermission = resolvePermission(extRules, extDirRoot);
+
+				if (extPermission === "deny") {
+					return { block: true, reason: `External directory access denied by policy: ${event.toolName} \`${resolvedPath}\`. ${hardStop()}` };
+				}
+
+				if (extPermission === "ask" || extPermission === "cloak") {
+					if (!ctx.hasUI) {
+						return { block: true, reason: `External directory access required (no UI): ${event.toolName} \`${resolvedPath}\`. ${hardStop()}` };
+					}
+
+					const extApprovalKey = buildSessionApprovalKey("external_directory", extDirRoot);
+					if (!sessionApprovals.has(extApprovalKey)) {
+						const description = formatToolDescription(event.toolName, event.input as Record<string, unknown>);
+						const title = `External directory access\n\nThe agent wants to ${description}\n\nThis path is outside the current workspace:\n  ${ctx.cwd}\n\nTarget: ${resolvedPath}\n\nAllow leaving the workspace?`;
+
+						const choice = await ctx.ui.select(title, ["Yes (one time)", "Yes (this session)", "No"]);
+
+						if (choice === "No" || choice === undefined) {
+							return { block: true, reason: `Blocked by user: external directory access denied. ${hardStop()}` };
+						}
+
+						if (choice === "Yes (this session)") {
+							sessionApprovals.add(extApprovalKey);
+						}
+						// "Yes (one time)" proceeds without adding to sessionApprovals
+					}
+				}
+				// If extPermission === "allow", proceed to normal tool rules
+			}
+		}
+
+		// --- Normal tool-specific permission check ---
 		const toolRules = config.rules[event.toolName];
 		if (toolRules === undefined) {
 			return undefined; // No rules for this tool -> allow

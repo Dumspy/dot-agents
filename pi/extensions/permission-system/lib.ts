@@ -6,6 +6,7 @@
  */
 
 import { isMatch } from "picomatch";
+import { resolve, sep } from "node:path";
 
 export type PermissionValue = "allow" | "deny" | "ask" | "cloak";
 
@@ -30,6 +31,56 @@ export interface PermissionsConfig {
 	masks: {
 		[toolName: string]: ToolMasks;
 	};
+}
+
+export const EXTERNAL_DIRECTORY_TOOLS = ["read", "write", "edit", "ls"] as const;
+export type ExternalDirectoryTool = (typeof EXTERNAL_DIRECTORY_TOOLS)[number];
+
+export function isPathBasedTool(toolName: string): boolean {
+	return EXTERNAL_DIRECTORY_TOOLS.includes(toolName as ExternalDirectoryTool);
+}
+
+export function resolveToolPath(toolName: string, input: Record<string, unknown>, cwd: string): string | null {
+	if (!isPathBasedTool(toolName)) return null;
+	const rawPath = String(input.path ?? "");
+	if (!rawPath) return null;
+	return resolve(cwd, rawPath);
+}
+
+export function isExternalPath(resolvedPath: string, cwd: string): boolean {
+	const normalizedCwd = resolve(cwd);
+	const normalizedPath = resolve(resolvedPath);
+	if (normalizedPath === normalizedCwd) return false;
+	return !normalizedPath.startsWith(normalizedCwd + sep);
+}
+
+export function getExternalDirectoryRoot(resolvedPath: string, cwd: string): string | null {
+	const normCwd = resolve(cwd);
+	const normPath = resolve(resolvedPath);
+
+	if (!isExternalPath(resolvedPath, cwd)) return null;
+
+	const minLen = Math.min(normCwd.length, normPath.length);
+	let lastSep = -1;
+	for (let i = 0; i < minLen; i++) {
+		if (normCwd[i] !== normPath[i]) break;
+		if (normCwd[i] === sep) lastSep = i;
+	}
+
+	if (lastSep === -1) {
+		// Different roots — return the root of the external path
+		const firstSep = normPath.indexOf(sep, 1);
+		return firstSep === -1 ? normPath : normPath.slice(0, firstSep);
+	}
+
+	const afterCommon = normPath.slice(lastSep + 1);
+	const nextSep = afterCommon.indexOf(sep);
+	if (nextSep === -1) {
+		// We can't tell if this is a file or directory without stat.
+		// Approve the exact path to stay safe.
+		return normPath;
+	}
+	return normPath.slice(0, lastSep + 1 + nextSep);
 }
 
 export const DEFAULT_CONFIG: PermissionsConfig = {
@@ -123,6 +174,9 @@ export const DEFAULT_CONFIG: PermissionsConfig = {
 			"dex *": "allow",
 		},
 		webfetch: "ask",
+		external_directory: {
+			"**": "ask",
+		},
 	},
 	masks: {
 		read: {
