@@ -769,6 +769,7 @@ describe("createLogEntry", () => {
 			"prompt-approved-once",
 			"prompt-approved-session",
 			"prompt-denied",
+			"prompt-denied-with-alternative",
 			"prompt-explained",
 		] as const;
 

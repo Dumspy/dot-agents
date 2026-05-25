@@ -317,6 +317,7 @@ export type PermissionAction =
 	| "prompt-approved-once"
 	| "prompt-approved-session"
 	| "prompt-denied"
+	| "prompt-denied-with-alternative"
 	| "prompt-explained";
 
 export interface LogEntry {

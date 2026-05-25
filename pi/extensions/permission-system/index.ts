@@ -93,6 +93,7 @@ const SYSTEM_PROMPT_NOTICE = `Permission system is active. Some paths and tools 
 export default function permissionSystem(pi: ExtensionAPI) {
 	let config = DEFAULT_CONFIG;
 	const sessionApprovals = new Set<string>();
+	const sessionDenials = new Set<string>();
 
 	function reloadConfig(cwd: string) {
 		config = loadConfig(cwd);
@@ -138,6 +139,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		reloadConfig(ctx.cwd);
 		sessionApprovals.clear();
+		sessionDenials.clear();
 	});
 
 	pi.on("before_agent_start", async (event, _ctx) => {
@@ -176,12 +178,33 @@ export default function permissionSystem(pi: ExtensionAPI) {
 					}
 
 					const extApprovalKey = buildSessionApprovalKey("external_directory", extDirRoot);
+					if (sessionDenials.has(extApprovalKey)) {
+						return logAndBlock(
+							toolName, resolvedPath, ctx.cwd, "prompt-denied",
+							"external_directory: session denial cache",
+							"Blocked by user: external directory access denied.",
+						);
+					}
 					if (!sessionApprovals.has(extApprovalKey)) {
 						const description = formatToolDescription(toolName, input);
 						const title = `External directory access\n\nThe agent wants to ${description}\n\nThis path is outside the current workspace:\n  ${ctx.cwd}\n\nTarget: ${resolvedPath}\n\nAllow leaving the workspace?`;
-						const choice = await ctx.ui.select(title, ["Yes (one time)", "Yes (this session)", "No"]);
+						const choice = await ctx.ui.select(title, ["Yes", "No"]);
 
 						if (choice === "No" || choice === undefined) {
+							sessionDenials.add(extApprovalKey);
+							const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
+							if (alternative) {
+								try {
+									pi.sendUserMessage(`I denied ${description}. Instead: ${alternative}`, { deliverAs: "steer" });
+								} catch (e) {
+									console.error(`[permissions] Failed to send alternative action: ${e}`);
+								}
+								return logAndBlock(
+									toolName, resolvedPath, ctx.cwd, "prompt-denied-with-alternative",
+									`external_directory: user denied with alternative: ${alternative}`,
+									`Blocked by user (alternative suggested): ${alternative}.`,
+								);
+							}
 							return logAndBlock(
 								toolName, resolvedPath, ctx.cwd, "prompt-denied",
 								"external_directory: user denied",
@@ -189,10 +212,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 							);
 						}
 
-						if (choice === "Yes (this session)") {
-							sessionApprovals.add(extApprovalKey);
-						}
-						// "Yes (one time)" proceeds without adding to sessionApprovals
+						sessionApprovals.add(extApprovalKey);
 					}
 				}
 				// If extPermission === "allow", proceed to normal tool rules below
@@ -233,19 +253,22 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		}
 
 		const approvalKey = buildSessionApprovalKey(toolName, value);
+		if (sessionDenials.has(approvalKey)) {
+			return logAndBlock(
+				toolName, value, ctx.cwd, "prompt-denied",
+				"session denial cache",
+				"Blocked by user.",
+			);
+		}
 		if (sessionApprovals.has(approvalKey)) {
 			return logAndAllow(toolName, value, ctx.cwd, "allowed-session-cache", `session approval: ${approvalKey}`);
 		}
 
 		const description = formatToolDescription(toolName, input);
 		const title = `Permission required\n\nThe agent wants to ${description}\n\nAllow this action?`;
-		const choice = await ctx.ui.select(title, ["Yes", "Yes to session", "No", "Explain"]);
+		const choice = await ctx.ui.select(title, ["Yes", "No", "Explain"]);
 
 		if (choice === "Yes") {
-			return logAndAllow(toolName, value, ctx.cwd, "prompt-approved-once", "user approved");
-		}
-
-		if (choice === "Yes to session") {
 			sessionApprovals.add(approvalKey);
 			return logAndAllow(toolName, value, ctx.cwd, "prompt-approved-session", "user approved session");
 		}
@@ -265,6 +288,20 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		}
 
 		// "No" or cancelled
+		sessionDenials.add(approvalKey);
+		const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
+		if (alternative) {
+			try {
+				pi.sendUserMessage(`I denied ${description}. Instead: ${alternative}`, { deliverAs: "steer" });
+			} catch (e) {
+				console.error(`[permissions] Failed to send alternative action: ${e}`);
+			}
+			return logAndBlock(
+				toolName, value, ctx.cwd, "prompt-denied-with-alternative",
+				`user denied with alternative: ${alternative}`,
+				`Blocked by user (alternative suggested): ${alternative}.`,
+			);
+		}
 		return logAndBlock(
 			toolName, value, ctx.cwd, "prompt-denied",
 			"user denied",
@@ -332,6 +369,13 @@ export default function permissionSystem(pi: ExtensionAPI) {
 			if (sessionApprovals.size > 0) {
 				lines.push("", `Session approvals (${sessionApprovals.size}):`);
 				for (const key of sessionApprovals) {
+					lines.push(`  ${key}`);
+				}
+			}
+
+			if (sessionDenials.size > 0) {
+				lines.push("", `Session denials (${sessionDenials.size}):`);
+				for (const key of sessionDenials) {
 					lines.push(`  ${key}`);
 				}
 			}
