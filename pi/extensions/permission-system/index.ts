@@ -53,6 +53,7 @@ import {
 	resolvePermission,
 	resolveToolPath,
 	shouldMask,
+	type PermissionAction,
 	type PermissionsConfig,
 } from "./lib.js";
 
@@ -101,7 +102,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		toolName: string,
 		value: string,
 		cwd: string,
-		action: import("./lib.js").PermissionAction,
+		action: PermissionAction,
 		reason: string,
 	): void {
 		const logPath = join(getAgentDir(), "permissions.log.jsonl");
@@ -109,6 +110,29 @@ export default function permissionSystem(pi: ExtensionAPI) {
 			mkdirSync(dirname(logPath), { recursive: true });
 		} catch {}
 		appendFileSync(logPath, formatLogLine(createLogEntry(toolName, value, cwd, action, reason)));
+	}
+
+	function logAndAllow(
+		toolName: string,
+		value: string,
+		cwd: string,
+		action: PermissionAction,
+		reason: string,
+	): undefined {
+		logDecision(toolName, value, cwd, action, reason);
+		return undefined;
+	}
+
+	function logAndBlock(
+		toolName: string,
+		value: string,
+		cwd: string,
+		action: PermissionAction,
+		logReason: string,
+		userReason: string,
+	): { block: true; reason: string } {
+		logDecision(toolName, value, cwd, action, logReason);
+		return { block: true, reason: `${userReason} ${hardStop()}` };
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -123,35 +147,46 @@ export default function permissionSystem(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		const input = event.input as Record<string, unknown>;
+		const toolName = event.toolName;
+		const value = getToolValue(toolName, input);
+
 		// --- External directory gate ---
-		const resolvedPath = resolveToolPath(event.toolName, event.input as Record<string, unknown>, ctx.cwd);
+		const resolvedPath = resolveToolPath(toolName, input, ctx.cwd);
 		if (resolvedPath) {
 			const extDirRoot = getExternalDirectoryRoot(resolvedPath, ctx.cwd);
 			if (extDirRoot) {
-				const extRules = config.rules.external_directory;
-				const extPermission = resolvePermission(extRules, extDirRoot);
+				const extPermission = resolvePermission(config.rules.external_directory, extDirRoot);
 
 				if (extPermission === "deny") {
-					logDecision(event.toolName, resolvedPath ?? "", ctx.cwd, "blocked", `external_directory deny: ${extDirRoot}`);
-					return { block: true, reason: `External directory access denied by policy: ${event.toolName} \`${resolvedPath}\`. ${hardStop()}` };
+					return logAndBlock(
+						toolName, resolvedPath, ctx.cwd, "blocked",
+						`external_directory deny: ${extDirRoot}`,
+						`External directory access denied by policy: ${toolName} \`${resolvedPath}\`.`,
+					);
 				}
 
 				if (extPermission === "ask" || extPermission === "cloak") {
 					if (!ctx.hasUI) {
-						logDecision(event.toolName, resolvedPath ?? "", ctx.cwd, "blocked-no-ui", "external_directory ask (no UI)");
-						return { block: true, reason: `External directory access required (no UI): ${event.toolName} \`${resolvedPath}\`. ${hardStop()}` };
+						return logAndBlock(
+							toolName, resolvedPath, ctx.cwd, "blocked-no-ui",
+							"external_directory ask (no UI)",
+							`External directory access required (no UI): ${toolName} \`${resolvedPath}\`.`,
+						);
 					}
 
 					const extApprovalKey = buildSessionApprovalKey("external_directory", extDirRoot);
 					if (!sessionApprovals.has(extApprovalKey)) {
-						const description = formatToolDescription(event.toolName, event.input as Record<string, unknown>);
+						const description = formatToolDescription(toolName, input);
 						const title = `External directory access\n\nThe agent wants to ${description}\n\nThis path is outside the current workspace:\n  ${ctx.cwd}\n\nTarget: ${resolvedPath}\n\nAllow leaving the workspace?`;
-
 						const choice = await ctx.ui.select(title, ["Yes (one time)", "Yes (this session)", "No"]);
 
 						if (choice === "No" || choice === undefined) {
-							logDecision(event.toolName, resolvedPath ?? "", ctx.cwd, "prompt-denied", "external_directory: user denied");
-							return { block: true, reason: `Blocked by user: external directory access denied. ${hardStop()}` };
+							return logAndBlock(
+								toolName, resolvedPath, ctx.cwd, "prompt-denied",
+								"external_directory: user denied",
+								"Blocked by user: external directory access denied.",
+							);
 						}
 
 						if (choice === "Yes (this session)") {
@@ -160,124 +195,112 @@ export default function permissionSystem(pi: ExtensionAPI) {
 						// "Yes (one time)" proceeds without adding to sessionApprovals
 					}
 				}
-				// If extPermission === "allow", proceed to normal tool rules
+				// If extPermission === "allow", proceed to normal tool rules below
 			}
 		}
 
 		// --- Normal tool-specific permission check ---
-		const toolRules = config.rules[event.toolName];
+		const toolRules = config.rules[toolName];
 		if (toolRules === undefined) {
-			logDecision(event.toolName, getToolValue(event.toolName, event.input as Record<string, unknown>), ctx.cwd, "allowed", "no rules configured for tool");
-			return undefined; // No rules for this tool -> allow
+			return logAndAllow(toolName, value, ctx.cwd, "allowed", "no rules configured for tool");
 		}
 
-		const value = getToolValue(event.toolName, event.input as Record<string, unknown>);
 		const permission = resolvePermission(toolRules, value);
 
 		if (permission === "allow") {
-			logDecision(event.toolName, value, ctx.cwd, "allowed", "rule: allow");
-			return undefined;
+			return logAndAllow(toolName, value, ctx.cwd, "allowed", "rule: allow");
 		}
 
 		if (permission === "cloak") {
-			logDecision(event.toolName, value, ctx.cwd, "cloaked", "rule: cloak");
-			return undefined;
+			return logAndAllow(toolName, value, ctx.cwd, "cloaked", "rule: cloak");
 		}
 
 		if (permission === "deny") {
-			logDecision(event.toolName, value, ctx.cwd, "blocked", "rule: deny");
-			return { block: true, reason: `Permission denied by policy: ${event.toolName} ${value}. ${hardStop()}` };
+			return logAndBlock(
+				toolName, value, ctx.cwd, "blocked",
+				"rule: deny",
+				`Permission denied by policy: ${toolName} ${value}.`,
+			);
 		}
 
 		// permission === "ask"
 		if (!ctx.hasUI) {
-			logDecision(event.toolName, value, ctx.cwd, "blocked-no-ui", "ask (no UI)");
-			return { block: true, reason: `Permission required (no UI): ${event.toolName} ${value}. ${hardStop()}` };
+			return logAndBlock(
+				toolName, value, ctx.cwd, "blocked-no-ui",
+				"ask (no UI)",
+				`Permission required (no UI): ${toolName} ${value}.`,
+			);
 		}
 
-		// Check session approvals
-		const approvalKey = buildSessionApprovalKey(event.toolName, value);
+		const approvalKey = buildSessionApprovalKey(toolName, value);
 		if (sessionApprovals.has(approvalKey)) {
-			logDecision(event.toolName, value, ctx.cwd, "allowed-session-cache", `session approval: ${approvalKey}`);
-			return undefined;
+			return logAndAllow(toolName, value, ctx.cwd, "allowed-session-cache", `session approval: ${approvalKey}`);
 		}
 
-		const description = formatToolDescription(event.toolName, event.input as Record<string, unknown>);
+		const description = formatToolDescription(toolName, input);
 		const title = `Permission required\n\nThe agent wants to ${description}\n\nAllow this action?`;
-
 		const choice = await ctx.ui.select(title, ["Yes", "Yes to session", "No", "Explain"]);
 
 		if (choice === "Yes") {
-			logDecision(event.toolName, value, ctx.cwd, "prompt-approved-once", "user approved");
-			return undefined;
+			return logAndAllow(toolName, value, ctx.cwd, "prompt-approved-once", "user approved");
 		}
 
 		if (choice === "Yes to session") {
 			sessionApprovals.add(approvalKey);
-			logDecision(event.toolName, value, ctx.cwd, "prompt-approved-session", "user approved session");
-			return undefined;
+			return logAndAllow(toolName, value, ctx.cwd, "prompt-approved-session", "user approved session");
 		}
 
 		if (choice === "Explain") {
-			// Block the tool and ask the agent to explain
 			const explanationPrompt = `I see you want to ${description}. Can you explain why you need to do this before I approve it?`;
-			// Use steer to interrupt the current turn with our question
 			try {
 				pi.sendUserMessage(explanationPrompt, { deliverAs: "steer" });
 			} catch (e) {
-				// If steer fails, fall back to blocking without explanation
 				console.error(`[permissions] Failed to send explanation request: ${e}`);
 			}
-			logDecision(event.toolName, value, ctx.cwd, "prompt-explained", "user requested explanation");
-			return { block: true, reason: `User requested explanation before approving. ${hardStop()}` };
+			return logAndBlock(
+				toolName, value, ctx.cwd, "prompt-explained",
+				"user requested explanation",
+				"User requested explanation before approving.",
+			);
 		}
 
 		// "No" or cancelled
-			logDecision(event.toolName, value, ctx.cwd, "prompt-denied", "user denied");
-		return { block: true, reason: `Blocked by user. ${hardStop()}` };
+		return logAndBlock(
+			toolName, value, ctx.cwd, "prompt-denied",
+			"user denied",
+			"Blocked by user.",
+		);
 	});
 
-	pi.on("tool_result", async (event, _ctx) => {
-		if (event.toolName !== "read") {
-			return undefined;
-		}
+	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName !== "read") return undefined;
 
 		const value = getToolValue("read", event.input as Record<string, unknown>);
 		const maskResult = shouldMask("read", config, value);
-		if (!maskResult) {
-			return undefined;
-		}
+		if (!maskResult) return undefined;
 
 		let changed = false;
 		const content = event.content.map((part) => {
-			if (part.type !== "text" || typeof part.text !== "string") {
-				return part;
-			}
+			if (part.type !== "text" || typeof part.text !== "string") return part;
 
 			const maskedText = applyMask(part.text, maskResult.mask);
-			if (maskedText === part.text) {
-				return part;
-			}
+			if (maskedText === part.text) return part;
 
 			changed = true;
-			return {
-				...part,
-				text: maskedText,
-			};
+			return { ...part, text: maskedText };
 		});
 
-		if (!changed) {
-			return undefined;
-		}
+		if (!changed) return undefined;
+		logDecision("read", value, ctx.cwd, "cloaked", "mask applied");
 		return { content };
 	});
 
 	pi.registerCommand("permissions", {
 		description: "Show current permission system status",
 		handler: async (_args, ctx) => {
-			const lines = ["Permission System Status:", ""];
-			const ruleEntries = Object.entries(config.rules);
+			const lines: string[] = ["Permission System Status:", ""];
 
+			const ruleEntries = Object.entries(config.rules);
 			if (ruleEntries.length === 0) {
 				lines.push("No rules configured.");
 			} else {
@@ -296,8 +319,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 
 			const maskEntries = Object.entries(config.masks);
 			if (maskEntries.length > 0) {
-				lines.push("");
-				lines.push("Masks:");
+				lines.push("", "Masks:");
 				for (const [toolName, toolMasks] of maskEntries) {
 					lines.push(`  ${toolName}:`);
 					for (const [pattern, mask] of Object.entries(toolMasks)) {
@@ -308,16 +330,13 @@ export default function permissionSystem(pi: ExtensionAPI) {
 			}
 
 			if (sessionApprovals.size > 0) {
-				lines.push("");
-				lines.push(`Session approvals (${sessionApprovals.size}):`);
+				lines.push("", `Session approvals (${sessionApprovals.size}):`);
 				for (const key of sessionApprovals) {
 					lines.push(`  ${key}`);
 				}
 			}
 
-			lines.push("");
-			lines.push(`Log file: ${join(getAgentDir(), "permissions.log.jsonl")}`);
-
+			lines.push("", `Log file: ${join(getAgentDir(), "permissions.log.jsonl")}`);
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
@@ -332,7 +351,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 			}
 
 			const lines = readFileSync(logPath, "utf-8").trim().split("\n").filter(Boolean);
-			const recent = lines.slice(-20); // Last 20 entries
+			const recent = lines.slice(-20);
 
 			if (recent.length === 0) {
 				ctx.ui.notify("Log file is empty.", "info");
@@ -348,7 +367,10 @@ export default function permissionSystem(pi: ExtensionAPI) {
 				}
 			});
 
-			ctx.ui.notify(["Recent permission decisions:", "", ...entries, "", `Total entries: ${lines.length}`].join("\n"), "info");
+			ctx.ui.notify(
+				["Recent permission decisions:", "", ...entries, "", `Total entries: ${lines.length}`].join("\n"),
+				"info",
+			);
 		},
 	});
 

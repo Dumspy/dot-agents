@@ -567,12 +567,12 @@ describe("isPathBasedTool", () => {
 		expect(isPathBasedTool("read")).toBe(true);
 		expect(isPathBasedTool("write")).toBe(true);
 		expect(isPathBasedTool("edit")).toBe(true);
-		expect(isPathBasedTool("ls")).toBe(true);
 	});
 
 	it("returns false for non-path tools", () => {
 		expect(isPathBasedTool("bash")).toBe(false);
 		expect(isPathBasedTool("webfetch")).toBe(false);
+		expect(isPathBasedTool("ls")).toBe(false);
 		expect(isPathBasedTool("custom")).toBe(false);
 	});
 });

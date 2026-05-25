@@ -33,7 +33,7 @@ export interface PermissionsConfig {
 	};
 }
 
-export const EXTERNAL_DIRECTORY_TOOLS = ["read", "write", "edit", "ls"] as const;
+export const EXTERNAL_DIRECTORY_TOOLS = ["read", "write", "edit"] as const;
 export type ExternalDirectoryTool = (typeof EXTERNAL_DIRECTORY_TOOLS)[number];
 
 export function isPathBasedTool(toolName: string): boolean {
@@ -83,89 +83,54 @@ export function getExternalDirectoryRoot(resolvedPath: string, cwd: string): str
 	return normPath.slice(0, lastSep + 1 + nextSep);
 }
 
+// Note: **/ patterns match at any depth (including root). For example,
+// "**/*.env" matches both ".env" and "packages/api/.env", so root-level
+// variants like ".env" or "**/.env" are redundant.
 export const DEFAULT_CONFIG: PermissionsConfig = {
 	rules: {
 		read: {
 			"**": "allow",
-			".env": "cloak",
-			"**/.env": "cloak",
 			"**/*.env": "cloak",
-			".env.*": "cloak",
-			"**/.env.*": "cloak",
 			"**/*.env.*": "cloak",
-			"*.env": "cloak",
-			"*.env.*": "cloak",
-			"*.envrc": "deny",
 			"**/*.envrc": "deny",
-			"secrets/**": "deny",
 			"**/secrets/**": "deny",
-			".ssh/**": "deny",
 			"**/.ssh/**": "deny",
-			".gnupg/**": "deny",
 			"**/.gnupg/**": "deny",
-			".config/1password/**": "deny",
 			"**/.config/1password/**": "deny",
-			"*.key": "deny",
 			"**/*.key": "deny",
-			"*.pem": "deny",
 			"**/*.pem": "deny",
-			"*.p12": "deny",
 			"**/*.p12": "deny",
-			"*.pfx": "deny",
 			"**/*.pfx": "deny",
-			".aws/**": "deny",
 			"**/.aws/**": "deny",
-			".docker/**": "deny",
 			"**/.docker/**": "deny",
-			".kube/**": "deny",
 			"**/.kube/**": "deny",
-			".git/**": "deny",
 			"**/.git/**": "deny",
-			".gitmodules": "deny",
 			"**/.gitmodules": "deny",
 			// Pi docs live inside node_modules; allow reading them
 			"**/node_modules/@earendil-works/pi-ai/**": "allow",
 			"**/node_modules/@earendil-works/pi-coding-agent/**": "allow",
 			"**/node_modules/@earendil-works/pi-tui/**": "allow",
-			"node_modules/**": "deny",
 			"**/node_modules/**": "deny",
-			".venv/**": "deny",
 			"**/.venv/**": "deny",
-			"venv/**": "deny",
 			"**/venv/**": "deny",
-			"dist/**": "deny",
 			"**/dist/**": "deny",
-			"build/**": "deny",
 			"**/build/**": "deny",
-			"target/**": "deny",
 			"**/target/**": "deny",
 		},
 		write: {
 			"**": "allow",
-			".env": "deny",
-			"**/.env": "deny",
 			"**/*.env": "deny",
-			".git/**": "deny",
 			"**/.git/**": "deny",
-			"node_modules/**": "deny",
 			"**/node_modules/**": "deny",
-			".venv/**": "deny",
 			"**/.venv/**": "deny",
-			"venv/**": "deny",
 			"**/venv/**": "deny",
 		},
 		edit: {
 			"**": "allow",
-			".env": "deny",
-			"**/.env": "deny",
 			"**/*.env": "deny",
-			".git/**": "deny",
 			"**/.git/**": "deny",
-			"node_modules/**": "deny",
 			"**/node_modules/**": "deny",
-			".venv/**": "deny",
 			"**/.venv/**": "deny",
-			"venv/**": "deny",
 			"**/venv/**": "deny",
 		},
 		bash: {
@@ -185,13 +150,8 @@ export const DEFAULT_CONFIG: PermissionsConfig = {
 	masks: {
 		read: {
 			".env": { pattern: "(=).+", replace: "$1" },
-			"**/.env": { pattern: "(=).+", replace: "$1" },
 			"**/*.env": { pattern: "(=).+", replace: "$1" },
-			".env.*": { pattern: "(=).+", replace: "$1" },
-			"**/.env.*": { pattern: "(=).+", replace: "$1" },
 			"**/*.env.*": { pattern: "(=).+", replace: "$1" },
-			"*.env": { pattern: "(=).+", replace: "$1" },
-			"*.env.*": { pattern: "(=).+", replace: "$1" },
 			"*.vars*": { pattern: "(=).+", replace: "$1" },
 		},
 	},
@@ -203,26 +163,17 @@ export function deepMerge(base: PermissionsConfig, override: Partial<Permissions
 		masks: { ...base.masks },
 	};
 
-	if (override.rules) {
-		for (const [toolName, toolRules] of Object.entries(override.rules)) {
-			if (typeof toolRules === "string") {
-				result.rules[toolName] = toolRules;
-			} else if (typeof toolRules === "object" && toolRules !== null) {
-				const baseRules = typeof base.rules[toolName] === "object" && base.rules[toolName] !== null
-					? (base.rules[toolName] as ToolPermissions)
-					: {};
-				result.rules[toolName] = { ...baseRules, ...toolRules };
-			}
-		}
+	for (const [toolName, toolRules] of Object.entries(override.rules ?? {})) {
+		result.rules[toolName] = typeof toolRules === "string"
+			? toolRules
+			: { ...(typeof base.rules[toolName] === "object" && base.rules[toolName] != null ? (base.rules[toolName] as ToolPermissions) : {}), ...toolRules };
 	}
 
-	if (override.masks) {
-		for (const [toolName, toolMasks] of Object.entries(override.masks)) {
-			const baseMasks = typeof base.masks[toolName] === "object" && base.masks[toolName] !== null
-				? (base.masks[toolName] as ToolMasks)
-				: {};
-			result.masks[toolName] = { ...baseMasks, ...toolMasks };
-		}
+	for (const [toolName, toolMasks] of Object.entries(override.masks ?? {})) {
+		result.masks[toolName] = {
+			...(typeof base.masks[toolName] === "object" && base.masks[toolName] != null ? (base.masks[toolName] as ToolMasks) : {}),
+			...toolMasks,
+		};
 	}
 
 	return result;
@@ -242,20 +193,37 @@ function stripGitEnvPrefix(command: string): string {
 	return command.startsWith(GIT_ENV_PREFIX) ? command.slice(GIT_ENV_PREFIX.length) : command;
 }
 
+function getBashCommand(input: Record<string, unknown>): string {
+	const raw = String(input.command ?? "");
+	return stripGitEnvPrefix(raw);
+}
+
+function findBestPatternMatch<T>(rules: Record<string, T> | undefined, value: string): T | null {
+	if (!rules) return null;
+
+	let bestMatch: { pattern: string; value: T } | null = null;
+	for (const [pattern, ruleValue] of Object.entries(rules)) {
+		if (pattern === value) return ruleValue;
+		if (matchGlob(pattern, value)) {
+			if (!bestMatch || pattern.length > bestMatch.pattern.length) {
+				bestMatch = { pattern, value: ruleValue };
+			}
+		}
+	}
+	return bestMatch?.value ?? null;
+}
+
 export function getToolValue(toolName: string, input: Record<string, unknown>): string {
 	switch (toolName) {
 		case "read":
 		case "write":
 		case "edit":
 			return String(input.path ?? "");
-		case "bash": {
-			const raw = String(input.command ?? "");
-			return stripGitEnvPrefix(raw);
-		}
+		case "bash":
+			return getBashCommand(input);
 		case "webfetch":
 			return String(input.url ?? "");
 		default:
-			// For custom tools, try common value fields
 			return String(input.path ?? input.command ?? input.url ?? input.query ?? JSON.stringify(input));
 	}
 }
@@ -264,52 +232,13 @@ export function resolvePermission(
 	rules: PermissionValue | ToolPermissions | undefined,
 	value: string,
 ): PermissionValue {
-	if (rules === undefined) {
-		return "ask"; // Default to ask if no rules defined
-	}
-
-	if (typeof rules === "string") {
-		return rules;
-	}
-
-	// Find the best matching pattern
-	// Priority: exact match > longest matching pattern > "*" fallback
-	let bestMatch: { pattern: string; value: PermissionValue } | null = null;
-
-	for (const [pattern, perm] of Object.entries(rules)) {
-		if (pattern === value) {
-			// Exact match wins immediately
-			return perm;
-		}
-		if (matchGlob(pattern, value)) {
-			if (!bestMatch || pattern.length > bestMatch.pattern.length) {
-				bestMatch = { pattern, value: perm };
-			}
-		}
-	}
-
-	return bestMatch?.value ?? "ask";
+	if (rules === undefined) return "ask";
+	if (typeof rules === "string") return rules;
+	return findBestPatternMatch(rules, value) ?? "ask";
 }
 
 export function resolveMask(toolMasks: ToolMasks | undefined, value: string): MaskPattern | null {
-	if (toolMasks === undefined) {
-		return null;
-	}
-
-	let bestMatch: { pattern: string; mask: MaskPattern } | null = null;
-
-	for (const [pattern, mask] of Object.entries(toolMasks)) {
-		if (pattern === value) {
-			return mask;
-		}
-		if (matchGlob(pattern, value)) {
-			if (!bestMatch || pattern.length > bestMatch.pattern.length) {
-				bestMatch = { pattern, mask };
-			}
-		}
-	}
-
-	return bestMatch?.mask ?? null;
+	return findBestPatternMatch(toolMasks, value);
 }
 
 export function applyMask(text: string, mask: MaskPattern): string {
@@ -351,11 +280,8 @@ export function formatToolDescription(toolName: string, input: Record<string, un
 		case "write":
 		case "edit":
 			return `${toolName} \`${input.path}\``;
-		case "bash": {
-			const raw = String(input.command ?? "");
-			const command = stripGitEnvPrefix(raw);
-			return `run \`${command}\``;
-		}
+		case "bash":
+			return `run \`${getBashCommand(input)}\``;
 		case "webfetch":
 			return `fetch \`${input.url}\``;
 		default:
