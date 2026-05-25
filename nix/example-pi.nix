@@ -1,7 +1,10 @@
 # Example Home Manager module for Pi permissions
 # Add this to your home.nix or import it alongside opencode.nix
-
-{ config, lib, ... }: {
+{
+  config,
+  lib,
+  ...
+}: {
   programs.dot-agents = {
     enable = true;
 

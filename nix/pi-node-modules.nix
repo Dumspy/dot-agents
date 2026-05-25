@@ -1,5 +1,4 @@
-{ pkgs }:
-
+{pkgs}:
 pkgs.stdenvNoCC.mkDerivation {
   name = "dot-agents-pi-node-modules";
 
@@ -21,7 +20,7 @@ pkgs.stdenvNoCC.mkDerivation {
     cp ${../pi/package-lock.runtime.json} $out/package-lock.json
   '';
 
-  nativeBuildInputs = [ pkgs.nodejs pkgs.cacert ];
+  nativeBuildInputs = [pkgs.nodejs pkgs.cacert];
 
   buildPhase = ''
     runHook preBuild

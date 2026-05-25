@@ -9,6 +9,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # External skill sources
     agent-browser = {
       url = "github:vercel-labs/agent-browser";
@@ -25,6 +30,7 @@
     self,
     nixpkgs,
     home-manager,
+    git-hooks,
     agent-browser,
     anthropics-agent-skills,
   }: let
@@ -39,10 +45,17 @@
 
     eachSystem = f:
       lib.genAttrs systems (
-        system:
+        system: let
+          pkgs = nixpkgs.legacyPackages.${system};
+          pre-commit-check = git-hooks.lib.${system}.run {
+            src = ./.;
+            hooks = {
+              alejandra.enable = true;
+            };
+          };
+        in
           f {
-            inherit system;
-            pkgs = nixpkgs.legacyPackages.${system};
+            inherit system pkgs pre-commit-check;
           }
       );
 
@@ -64,12 +77,24 @@
         }
     );
 
-    devShells = eachSystem ({pkgs, ...}: {
+    formatter = eachSystem ({pkgs, ...}: pkgs.alejandra);
+
+    checks = eachSystem ({pre-commit-check, ...}: {
+      inherit pre-commit-check;
+    });
+
+    devShells = eachSystem ({
+      pkgs,
+      pre-commit-check,
+      ...
+    }: {
       default = pkgs.mkShell {
-        packages = [pkgs.nodejs pkgs.rsync];
-        shellHook = ''
-          cd pi && npm install
-        '';
+        shellHook =
+          pre-commit-check.shellHook
+          + ''
+            cd pi && npm install
+          '';
+        packages = [pkgs.nodejs pkgs.rsync pkgs.alejandra];
       };
     });
 
