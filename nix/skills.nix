@@ -19,6 +19,7 @@ in {
   dependabot-solver = local ../skills/dependabot-solver;
   "pr-review-resolver" = local ../skills/pr-review-resolver;
   librarian = local ../skills/librarian;
+  init-deep = local ../skills/init-deep;
 
   # --- Anthropic ---
   "skill-creator" = external externalSources.anthropics-agent-skills "skills" "skill-creator";

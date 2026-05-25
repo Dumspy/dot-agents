@@ -3,7 +3,9 @@ import {
 	DEFAULT_CONFIG,
 	applyMask,
 	buildSessionApprovalKey,
+	createLogEntry,
 	deepMerge,
+	formatLogLine,
 	formatToolDescription,
 	getExternalDirectoryRoot,
 	getToolValue,
@@ -731,5 +733,66 @@ describe("External directory + tool rule interaction", () => {
 		// But read rules still apply
 		const readRules = DEFAULT_CONFIG.rules.read as Record<string, string>;
 		expect(resolvePermission(readRules, internalPath)).toBe("cloak");
+	});
+});
+
+describe("createLogEntry", () => {
+	it("creates a log entry with all fields", () => {
+		const entry = createLogEntry("bash", "ls -la", "/home/project", "allowed", "rule: allow", "2026-05-25T12:00:00.000Z");
+		expect(entry).toEqual({
+			timestamp: "2026-05-25T12:00:00.000Z",
+			toolName: "bash",
+			value: "ls -la",
+			cwd: "/home/project",
+			action: "allowed",
+			reason: "rule: allow",
+		});
+	});
+
+	it("defaults timestamp to current time when omitted", () => {
+		const entry = createLogEntry("read", ".env", "/home/project", "cloaked", "rule: cloak");
+		expect(entry.toolName).toBe("read");
+		expect(entry.value).toBe(".env");
+		expect(entry.cwd).toBe("/home/project");
+		expect(entry.action).toBe("cloaked");
+		expect(entry.reason).toBe("rule: cloak");
+		expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+	});
+
+	it("supports all permission actions", () => {
+		const actions = [
+			"allowed",
+			"cloaked",
+			"blocked",
+			"blocked-no-ui",
+			"allowed-session-cache",
+			"prompt-approved-once",
+			"prompt-approved-session",
+			"prompt-denied",
+			"prompt-explained",
+		] as const;
+
+		for (const action of actions) {
+			const entry = createLogEntry("bash", "git push", "/home/project", action, "test");
+			expect(entry.action).toBe(action);
+		}
+	});
+});
+
+describe("formatLogLine", () => {
+	it("formats entry as JSON with trailing newline", () => {
+		const entry = createLogEntry("bash", "rm -rf /", "/home/project", "blocked", "rule: deny", "2026-05-25T12:00:00.000Z");
+		const line = formatLogLine(entry);
+		expect(line).toBe('{"timestamp":"2026-05-25T12:00:00.000Z","toolName":"bash","value":"rm -rf /","cwd":"/home/project","action":"blocked","reason":"rule: deny"}\n');
+	});
+
+	it("produces valid JSON that can be parsed back", () => {
+		const entry = createLogEntry("read", "src/index.ts", "/home/project", "allowed", "rule: allow");
+		const line = formatLogLine(entry);
+		const parsed = JSON.parse(line);
+		expect(parsed.toolName).toBe("read");
+		expect(parsed.value).toBe("src/index.ts");
+		expect(parsed.action).toBe("allowed");
+		expect(parsed.reason).toBe("rule: allow");
 	});
 });

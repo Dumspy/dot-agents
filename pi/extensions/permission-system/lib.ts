@@ -377,3 +377,49 @@ export function hardStop(): string {
 export function buildSessionApprovalKey(toolName: string, value: string): string {
 	return `${toolName}:${value}`;
 }
+
+// ------------------------------------------------------------------
+// Logging — Pure Logic
+// ------------------------------------------------------------------
+
+export type PermissionAction =
+	| "allowed"
+	| "cloaked"
+	| "blocked"
+	| "blocked-no-ui"
+	| "allowed-session-cache"
+	| "prompt-approved-once"
+	| "prompt-approved-session"
+	| "prompt-denied"
+	| "prompt-explained";
+
+export interface LogEntry {
+	timestamp: string;
+	toolName: string;
+	value: string;
+	cwd: string;
+	action: PermissionAction;
+	reason: string;
+}
+
+export function createLogEntry(
+	toolName: string,
+	value: string,
+	cwd: string,
+	action: PermissionAction,
+	reason: string,
+	timestamp?: string,
+): LogEntry {
+	return {
+		timestamp: timestamp ?? new Date().toISOString(),
+		toolName,
+		value,
+		cwd,
+		action,
+		reason,
+	};
+}
+
+export function formatLogLine(entry: LogEntry): string {
+	return JSON.stringify(entry) + "\n";
+}
