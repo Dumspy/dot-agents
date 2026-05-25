@@ -20,6 +20,7 @@ in {
   "pr-review-resolver" = local ../skills/pr-review-resolver;
   librarian = local ../skills/librarian;
   init-deep = local ../skills/init-deep;
+  "grill-me" = local ../skills/grill-me;
 
   # --- Anthropic ---
   "skill-creator" = external externalSources.anthropics-agent-skills "skills" "skill-creator";

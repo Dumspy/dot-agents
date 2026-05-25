@@ -108,6 +108,20 @@
     masks = cfg.pi.masks;
   });
 
+  # Auto-discover pi themes
+  themesDir = ../themes/pi;
+  hasThemes = builtins.pathExists themesDir;
+  themeFiles =
+    if hasThemes
+    then builtins.attrNames (builtins.readDir themesDir)
+    else [];
+  themeNames = map (f: lib.removeSuffix ".json" f) (lib.filter (f: lib.hasSuffix ".json" f) themeFiles);
+  enabledPiThemes =
+    if cfg.pi.themes == null
+    then themeNames
+    else cfg.pi.themes;
+  missingPiThemes = lib.filter (name: !lib.elem name themeNames) enabledPiThemes;
+
   # Auto-discover opencode commands
   commandsDir = ../opencode/commands;
   hasCommands = builtins.pathExists commandsDir;
@@ -255,6 +269,16 @@ in {
           }
         '';
       };
+
+      themes = lib.mkOption {
+        type = lib.types.nullOr (lib.types.listOf lib.types.str);
+        default = null;
+        description = ''
+          Pi-specific themes to install to ~/.pi/agent/themes/.
+          Set to `null` to auto-discover all themes in themes/pi/.
+          Set to `[]` to disable themes.
+        '';
+      };
     };
 
     opencode = {
@@ -307,6 +331,10 @@ in {
       {
         assertion = missingPiExtensions == [];
         message = "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
+      }
+      {
+        assertion = missingPiThemes == [];
+        message = "dot-agents: unknown pi theme(s) requested: ${lib.concatStringsSep ", " missingPiThemes}. Available: ${lib.concatStringsSep ", " themeNames}";
       }
     ];
 
@@ -372,6 +400,14 @@ in {
       (lib.mkIf (cfg.pi.permissions != {} || cfg.pi.masks != {}) {
         ".pi/agent/permissions.json".source = permissionsJson;
       })
+      # Pi themes
+      (lib.mkIf (enabledPiThemes != []) (
+        lib.listToAttrs (map (name: {
+            name = ".pi/agent/themes/${name}.json";
+            value.source = "${themesDir}/${name}.json";
+          })
+          enabledPiThemes)
+      ))
     ];
 
     home.activation = lib.mkMerge [
