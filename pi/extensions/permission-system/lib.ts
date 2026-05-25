@@ -140,7 +140,11 @@ export const DEFAULT_CONFIG: PermissionsConfig = {
 			"git status*": "allow",
 			"git diff*": "allow",
 			"git log*": "allow",
-			"dex *": "allow",
+			"git branch*": "allow",
+			"rm -rf*": "deny",
+			"sudo*": "deny",
+			"eval*": "deny",
+			"source*": "deny",
 		},
 		webfetch: "ask",
 		external_directory: {

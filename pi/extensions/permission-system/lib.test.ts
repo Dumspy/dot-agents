@@ -484,30 +484,41 @@ describe("DEFAULT_CONFIG — intended behavior", () => {
 		});
 	});
 
-	describe("bash — ask by default, allow on safe commands", () => {
-		it("allows ls commands", () => {
+	describe("bash — ask by default, allow on safe commands, deny dangerous ones", () => {
+		it("allows ls commands (without path slashes)", () => {
 			expect(resolvePermission(bashRules, "ls -la")).toBe("allow");
 			expect(resolvePermission(bashRules, "ls")).toBe("allow");
+			// Paths with '/' fall through to ask because picomatch '*' does not match '/'
+			expect(resolvePermission(bashRules, "ls src/components")).toBe("ask");
 		});
 
 		it("allows pwd", () => {
 			expect(resolvePermission(bashRules, "pwd")).toBe("allow");
 		});
 
-		it("allows git status/diff/log", () => {
+		it("allows safe git read-only commands", () => {
 			expect(resolvePermission(bashRules, "git status")).toBe("allow");
 			expect(resolvePermission(bashRules, "git status -s")).toBe("allow");
 			expect(resolvePermission(bashRules, "git diff")).toBe("allow");
 			expect(resolvePermission(bashRules, "git log --oneline")).toBe("allow");
+			expect(resolvePermission(bashRules, "git branch")).toBe("allow");
 		});
 
-		it("allows dex commands", () => {
-			expect(resolvePermission(bashRules, "dex run -a")).toBe("allow");
+		it("denies dangerous commands without slashes", () => {
+			expect(resolvePermission(bashRules, "rm -rf node_modules")).toBe("deny");
+			expect(resolvePermission(bashRules, "sudo apt-get update")).toBe("deny");
+			expect(resolvePermission(bashRules, "eval rm -rf node_modules")).toBe("deny");
+			expect(resolvePermission(bashRules, "source .env")).toBe("deny");
 		});
 
-		it("asks for other commands", () => {
+		it("falls through to ask for everything else", () => {
 			expect(resolvePermission(bashRules, "rm -rf /")).toBe("ask");
 			expect(resolvePermission(bashRules, "curl example.com")).toBe("ask");
+			expect(resolvePermission(bashRules, "npm run build")).toBe("ask");
+			expect(resolvePermission(bashRules, "cargo test")).toBe("ask");
+			expect(resolvePermission(bashRules, "git push origin main")).toBe("ask");
+			expect(resolvePermission(bashRules, "tsc --noEmit")).toBe("ask");
+			expect(resolvePermission(bashRules, "npx some-package")).toBe("ask");
 		});
 	});
 
