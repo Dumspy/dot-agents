@@ -44,7 +44,7 @@ Or enable individual skills as separate modules:
 
 ```nix
 imports = [
-  inputs.dot-agents.homeModules.dependabot-solver
+  inputs.dot-agents.homeModules.librarian
   inputs.dot-agents.homeModules."frontend-design"
 ];
 ```

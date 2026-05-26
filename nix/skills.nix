@@ -16,8 +16,6 @@
 in {
   # --- Local skills ---
   # Paths are relative to nix/skills.nix, so ../skills/ points to repo root skills/
-  dependabot-solver = local ../skills/dependabot-solver;
-  "pr-review-resolver" = local ../skills/pr-review-resolver;
   librarian = local ../skills/librarian;
   init-deep = local ../skills/init-deep;
   "grill-me" = local ../skills/grill-me;
