@@ -1,5 +1,5 @@
 # Main bundle module: programs.dot-agents
-# Provides a single option to enable skills/agents and install them to configured directories.
+# Auto-discovers and installs all skills, agents, commands, and extensions.
 {
   self,
   externalSources,
@@ -14,39 +14,27 @@
   registry = import ./skills.nix {inherit externalSources;};
   allSkillNames = builtins.attrNames registry;
 
-  # Available agents (local .md files in ../agents/)
-  agentsDir = ../agents;
+  # --- Auto-discover agents ---
+  agentsDir = ../opencode/agents;
   agentFiles =
     if builtins.pathExists agentsDir
     then builtins.attrNames (builtins.readDir agentsDir)
     else [];
   agentNames = map (f: lib.removeSuffix ".md" f) (lib.filter (f: lib.hasSuffix ".md" f) agentFiles);
 
-  # Determine enabled skills
-  enabledSkillNames =
-    if cfg.enableAllSkills
-    then allSkillNames
-    else cfg.skills;
+  # --- Auto-discover pi skills ---
+  piSkillsDir = ../pi/skills;
+  hasPiSkills = builtins.pathExists piSkillsDir;
+  piSkillEntries = if hasPiSkills then builtins.readDir piSkillsDir else {};
+  piSkillNames = lib.attrNames (lib.filterAttrs (n: v: v == "directory") piSkillEntries);
 
-  # Determine enabled agents
-  enabledAgentNames =
-    if cfg.enableAllAgents
-    then agentNames
-    else cfg.agents;
+  # --- Auto-discover opencode skills ---
+  opencodeSkillsDir = ../opencode/skills;
+  hasOpencodeSkills = builtins.pathExists opencodeSkillsDir;
+  opencodeSkillEntries = if hasOpencodeSkills then builtins.readDir opencodeSkillsDir else {};
+  opencodeSkillNames = lib.attrNames (lib.filterAttrs (n: v: v == "directory") opencodeSkillEntries);
 
-  # Validate that requested skills exist
-  missingSkills = lib.filter (name: !builtins.hasAttr name registry) enabledSkillNames;
-
-  # Validate that requested agents exist
-  missingAgents = lib.filter (name: !lib.elem name agentNames) enabledAgentNames;
-
-  # Validate that requested pi skills exist
-  missingPiSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.pi.skills;
-
-  # Validate that requested opencode skills exist
-  missingOpencodeSkills = lib.filter (name: !builtins.hasAttr name registry) cfg.opencode.skills;
-
-  # Auto-discover pi extensions
+  # --- Auto-discover pi extensions ---
   piDir = ../pi;
   piExtensionsDir = piDir + "/extensions";
   hasPiExtensions = builtins.pathExists piExtensionsDir;
@@ -61,36 +49,6 @@
     else cfg.pi.extensions;
   missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
 
-  # Build a derivation containing all enabled skills
-  skillsBundle = pkgs.runCommand "dot-agents-skills-bundle" {preferLocalBuild = true;} ''
-    mkdir -p $out
-    ${lib.concatMapStringsSep "\n" (name: let
-        pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
-      in ''
-        ln -s ${pkg}/share/skills/${name} $out/${name}
-      '')
-      enabledSkillNames}
-  '';
-
-  # Build a derivation containing all enabled agents
-  agentsBundle = pkgs.runCommand "dot-agents-agents-bundle" {preferLocalBuild = true;} ''
-    mkdir -p $out
-    ${lib.concatMapStringsSep "\n" (name: ''
-        ln -s ${agentsDir}/${name}.md $out/${name}.md
-      '')
-      enabledAgentNames}
-  '';
-
-  # Build a derivation containing all enabled commands
-  commandsBundle = pkgs.runCommand "dot-agents-commands-bundle" {preferLocalBuild = true;} ''
-    mkdir -p $out
-    ${lib.concatMapStringsSep "\n" (name: ''
-        ln -s ${allCommands.${name}} $out/${name}.md
-      '')
-      (lib.attrNames allCommands)}
-  '';
-
-  # Build a derivation containing all enabled pi extensions
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = pkgs.callPackage ./pi-node-modules.nix {};
 
@@ -108,7 +66,7 @@
     masks = cfg.pi.masks;
   });
 
-  # Auto-discover pi themes
+  # --- Auto-discover pi themes ---
   themesDir = ../themes/pi;
   hasThemes = builtins.pathExists themesDir;
   themeFiles =
@@ -122,7 +80,7 @@
     else cfg.pi.themes;
   missingPiThemes = lib.filter (name: !lib.elem name themeNames) enabledPiThemes;
 
-  # Auto-discover opencode commands
+  # --- Auto-discover opencode commands ---
   commandsDir = ../opencode/commands;
   hasCommands = builtins.pathExists commandsDir;
   commandFiles =
@@ -141,7 +99,34 @@
   # Merge user commands with discovered commands (user takes precedence)
   allCommands = discoveredCommands // cfg.opencode.commands;
 
-  # Install strategy helpers
+  # --- Bundles ---
+  skillsBundle = pkgs.runCommand "dot-agents-skills-bundle" {preferLocalBuild = true;} ''
+    mkdir -p $out
+    ${lib.concatMapStringsSep "\n" (name: let
+        pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
+      in ''
+        ln -s ${pkg}/share/skills/${name} $out/${name}
+      '')
+      allSkillNames}
+  '';
+
+  agentsBundle = pkgs.runCommand "dot-agents-agents-bundle" {preferLocalBuild = true;} ''
+    mkdir -p $out
+    ${lib.concatMapStringsSep "\n" (name: ''
+        ln -s ${agentsDir}/${name}.md $out/${name}.md
+      '')
+      agentNames}
+  '';
+
+  commandsBundle = pkgs.runCommand "dot-agents-commands-bundle" {preferLocalBuild = true;} ''
+    mkdir -p $out
+    ${lib.concatMapStringsSep "\n" (name: ''
+        ln -s ${allCommands.${name}} $out/${name}.md
+      '')
+      (lib.attrNames allCommands)}
+  '';
+
+  # Install strategy helper
   mkRsyncActivation = bundle: destPath: structure: let
     rsyncFlags =
       if structure == "symlink-tree"
@@ -152,56 +137,11 @@
       mkdir -p "${destPath}"
       ${pkgs.rsync}/bin/rsync ${rsyncFlags} "${bundle}/" "${destPath}/"
     '';
-
-  # Generate home.file entries for link mode
-  mkSkillFiles = destBase:
-    lib.listToAttrs (map (name: {
-        name = "${destBase}/${name}";
-        value.source = "${skillsBundle}/${name}";
-      })
-      enabledSkillNames);
-
-  mkAgentFiles = destBase:
-    lib.listToAttrs (map (name: {
-        name = "${destBase}/${name}.md";
-        value.source = "${agentsBundle}/${name}.md";
-      })
-      enabledAgentNames);
 in {
   imports = [./home-manager-common.nix];
 
   options.programs.dot-agents = {
-    skills = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [];
-      description = "List of skill names to enable.";
-    };
-
-    enableAllSkills = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Enable all available skills.";
-    };
-
-    agents = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [];
-      description = "List of agent names to enable.";
-    };
-
-    enableAllAgents = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Enable all available agents.";
-    };
-
     pi = {
-      skills = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [];
-        description = "Pi-specific skills to install to ~/.pi/agent/skills/.";
-      };
-
       extensions = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
         default = null;
@@ -282,17 +222,11 @@ in {
     };
 
     opencode = {
-      skills = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [];
-        description = "OpenCode-specific skills to install to ~/.config/opencode/skills/.";
-      };
-
       commands = lib.mkOption {
         type = lib.types.attrsOf lib.types.path;
         default = {};
         description = ''
-          OpenCode-specific command definitions.
+          Extra OpenCode-specific command definitions (merged with auto-discovered commands).
           Each entry is a name -> path mapping for opencode commands.
         '';
       };
@@ -313,22 +247,6 @@ in {
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = missingSkills == [];
-        message = "dot-agents: unknown skill(s) requested: ${lib.concatStringsSep ", " missingSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
-      }
-      {
-        assertion = missingAgents == [];
-        message = "dot-agents: unknown agent(s) requested: ${lib.concatStringsSep ", " missingAgents}. Available: ${lib.concatStringsSep ", " agentNames}";
-      }
-      {
-        assertion = missingPiSkills == [];
-        message = "dot-agents: unknown skill(s) in pi.skills: ${lib.concatStringsSep ", " missingPiSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
-      }
-      {
-        assertion = missingOpencodeSkills == [];
-        message = "dot-agents: unknown skill(s) in opencode.skills: ${lib.concatStringsSep ", " missingOpencodeSkills}. Available: ${lib.concatStringsSep ", " allSkillNames}";
-      }
-      {
         assertion = missingPiExtensions == [];
         message = "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
       }
@@ -341,44 +259,40 @@ in {
     # --- home.file ---
     home.file = lib.mkMerge [
       # Universal skills (link mode only; rsync mode uses activation)
-      (lib.mkIf (cfg.structure == "link" && enabledSkillNames != []) (
+      (lib.mkIf (cfg.structure == "link" && allSkillNames != []) (
         lib.listToAttrs (lib.concatMap (dir:
           map (name: {
             name = "${dir}/${name}";
             value.source = "${skillsBundle}/${name}";
           })
-          enabledSkillNames)
+          allSkillNames)
         cfg.skillDirs)
       ))
       # Universal agents (link mode only)
-      (lib.mkIf (cfg.structure == "link" && enabledAgentNames != []) (
+      (lib.mkIf (cfg.structure == "link" && agentNames != []) (
         lib.listToAttrs (lib.concatMap (dir:
           map (name: {
             name = "${dir}/${name}.md";
             value.source = "${agentsBundle}/${name}.md";
           })
-          enabledAgentNames)
+          agentNames)
         cfg.agentDirs)
       ))
       # Pi-specific skills
-      (lib.mkIf (cfg.pi.skills != []) (
-        lib.listToAttrs (map (name: let
-            pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
-          in {
+      (lib.mkIf (piSkillNames != []) (
+        lib.listToAttrs (map (name: {
             name = ".pi/agent/skills/${name}";
-            value.source = "${pkg}/share/skills/${name}";
+            value.source = "${piSkillsDir}/${name}";
           })
-          cfg.pi.skills)
+          piSkillNames)
       ))
       # OpenCode-specific skills
-      (lib.mkIf (cfg.opencode.skills != []) (
-        lib.listToAttrs (map (name: let
-            pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
-          in {
+      (lib.mkIf (opencodeSkillNames != []) (
+        lib.listToAttrs (map (name: {
             name = ".config/opencode/skills/${name}";
-            value.source = "${pkg}/share/skills/${name}";
+            value.source = "${opencodeSkillsDir}/${name}";
           })
-          cfg.opencode.skills)
+          opencodeSkillNames)
       ))
       # OpenCode commands (link mode only)
       (lib.mkIf (cfg.structure == "link" && allCommands != {}) (
@@ -389,13 +303,9 @@ in {
           (lib.attrNames allCommands))
       ))
       # Pi extensions (link mode only; rsync mode uses activation)
-      (lib.mkIf (cfg.structure == "link" && enabledPiExtensions != []) (
-        lib.listToAttrs (map (name: {
-            name = ".pi/agent/extensions/${name}.ts";
-            value.source = "${piExtensionsBundle}/${name}.ts";
-          })
-          enabledPiExtensions)
-      ))
+      (lib.mkIf (cfg.structure == "link" && enabledPiExtensions != []) {
+        ".pi/agent/extensions".source = piExtensionsBundle;
+      })
       # Pi permissions
       (lib.mkIf (cfg.pi.permissions != {} || cfg.pi.masks != {}) {
         ".pi/agent/permissions.json".source = permissionsJson;
@@ -411,14 +321,14 @@ in {
     ];
 
     home.activation = lib.mkMerge [
-      (lib.mkIf (cfg.structure != "link" && enabledSkillNames != []) (
+      (lib.mkIf (cfg.structure != "link" && allSkillNames != []) (
         lib.listToAttrs (map (dir: {
             name = "install-dot-agents-skills-${lib.replaceStrings ["/"] ["-"] dir}";
             value = mkRsyncActivation skillsBundle "${config.home.homeDirectory}/${dir}" cfg.structure;
           })
           cfg.skillDirs)
       ))
-      (lib.mkIf (cfg.structure != "link" && enabledAgentNames != []) (
+      (lib.mkIf (cfg.structure != "link" && agentNames != []) (
         lib.listToAttrs (map (dir: {
             name = "install-dot-agents-agents-${lib.replaceStrings ["/"] ["-"] dir}";
             value = mkRsyncActivation agentsBundle "${config.home.homeDirectory}/${dir}" cfg.structure;

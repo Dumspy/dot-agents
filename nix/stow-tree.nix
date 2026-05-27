@@ -19,7 +19,7 @@
   '';
 
   # Copy agent definitions
-  agentsDir = ../agents;
+  agentsDir = ../opencode/agents;
   hasAgents = builtins.pathExists agentsDir;
   copyAgents = lib.optionalString hasAgents ''
     mkdir -p $out/.config/opencode/agents

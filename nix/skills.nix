@@ -16,7 +16,6 @@
 in {
   # --- Local skills ---
   # Paths are relative to nix/skills.nix, so ../skills/ points to repo root skills/
-  librarian = local ../skills/librarian;
   init-deep = local ../skills/init-deep;
   "grill-me" = local ../skills/grill-me;
 

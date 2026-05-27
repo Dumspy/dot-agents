@@ -7,7 +7,7 @@ Universal agent configuration for Pi, OpenCode, and future AI coding agents.
 | Directory | Purpose | Install target |
 |-----------|---------|----------------|
 | `skills/` | Universal skills (all agents) | `~/.agents/skills/` |
-| `agents/` | Subagent definitions | `~/.config/opencode/agents/` |
+| `opencode/agents/` | OpenCode subagent definitions | `~/.config/opencode/agents/` |
 | `pi/skills/` | Pi-specific skills | `~/.pi/agent/skills/` |
 | `pi/extensions/` | Pi TypeScript extensions | `~/.pi/agent/extensions/` |
 | `pi/permissions.json` | Pi permission config | `~/.pi/agent/permissions.json` |
@@ -35,18 +35,27 @@ imports = [ inputs.dot-agents.homeModules.default ];
 
 programs.dot-agents = {
   enable = true;
-  enableAllSkills = true;
-  agents = [ "code-simplifier" "librarian" "oracle" ];
 };
 ```
 
-Or enable individual skills as separate modules:
+Everything is auto-discovered from the repository and installed to the appropriate directories.
+You can still add extra OpenCode commands or override Pi settings:
 
 ```nix
-imports = [
-  inputs.dot-agents.homeModules.librarian
-  inputs.dot-agents.homeModules."frontend-design"
-];
+programs.dot-agents = {
+  enable = true;
+
+  opencode.commands = {
+    my-command = ./path/to/command.md;
+  };
+
+  pi = {
+    extensions = null;  # auto-discover all
+    permissions = {
+      read = { "*" = "allow"; };
+    };
+  };
+};
 ```
 
 ## Non-Nix (Stow)
@@ -66,12 +75,12 @@ The `stow` branch is automatically updated by a GitHub Action on every push to `
 ```
 dot-agents/
 ├── skills/           # Universal skills (all agents discover these)
-├── agents/           # Subagent definitions (.md files)
 ├── pi/               # Pi-specific artifacts
 │   ├── skills/
 │   ├── commands/
 │   └── extensions/
 ├── opencode/         # OpenCode-specific artifacts
+│   ├── agents/       # Subagent definitions (.md files)
 │   ├── skills/
 │   ├── commands/
 │   └── extensions/
