@@ -25,13 +25,19 @@
   # --- Auto-discover pi skills ---
   piSkillsDir = ../pi/skills;
   hasPiSkills = builtins.pathExists piSkillsDir;
-  piSkillEntries = if hasPiSkills then builtins.readDir piSkillsDir else {};
+  piSkillEntries =
+    if hasPiSkills
+    then builtins.readDir piSkillsDir
+    else {};
   piSkillNames = lib.attrNames (lib.filterAttrs (n: v: v == "directory") piSkillEntries);
 
   # --- Auto-discover opencode skills ---
   opencodeSkillsDir = ../opencode/skills;
   hasOpencodeSkills = builtins.pathExists opencodeSkillsDir;
-  opencodeSkillEntries = if hasOpencodeSkills then builtins.readDir opencodeSkillsDir else {};
+  opencodeSkillEntries =
+    if hasOpencodeSkills
+    then builtins.readDir opencodeSkillsDir
+    else {};
   opencodeSkillNames = lib.attrNames (lib.filterAttrs (n: v: v == "directory") opencodeSkillEntries);
 
   # --- Auto-discover pi extensions ---
