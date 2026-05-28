@@ -10,6 +10,7 @@ Universal agent configuration for Pi, OpenCode, and future AI coding agents.
 | `opencode/agents/` | OpenCode subagent definitions | `~/.config/opencode/agents/` |
 | `pi/skills/` | Pi-specific skills | `~/.pi/agent/skills/` |
 | `pi/extensions/` | Pi TypeScript extensions | `~/.pi/agent/extensions/` |
+| `pi/themes/` | Pi terminal themes | `~/.pi/agent/themes/` |
 | `pi/permissions.json` | Pi permission config | `~/.pi/agent/permissions.json` |
 | `opencode/skills/` | OpenCode-specific skills | `~/.config/opencode/skills/` |
 | `opencode/commands/` | OpenCode commands | `~/.config/opencode/commands/` |
@@ -77,8 +78,8 @@ dot-agents/
 ├── skills/           # Universal skills (all agents discover these)
 ├── pi/               # Pi-specific artifacts
 │   ├── skills/
-│   ├── commands/
-│   └── extensions/
+│   ├── extensions/
+│   └── themes/
 ├── opencode/         # OpenCode-specific artifacts
 │   ├── agents/       # Subagent definitions (.md files)
 │   ├── skills/

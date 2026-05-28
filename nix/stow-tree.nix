@@ -61,6 +61,32 @@
       fi
     done
   '';
+
+  # Copy pi-specific extensions
+  piExtensionsDir = ../pi/extensions;
+  hasPiExtensions = builtins.pathExists piExtensionsDir;
+  copyPiExtensions = lib.optionalString hasPiExtensions ''
+    mkdir -p $out/.pi/agent/extensions
+    for f in ${piExtensionsDir}/*; do
+      if [ -d "$f" ]; then
+        cp -rL "$f" $out/.pi/agent/extensions/$(basename "$f")
+      elif [ -f "$f" ]; then
+        cp -L "$f" $out/.pi/agent/extensions/$(basename "$f")
+      fi
+    done
+  '';
+
+  # Copy pi-specific themes
+  piThemesDir = ../pi/themes;
+  hasPiThemes = builtins.pathExists piThemesDir;
+  copyPiThemes = lib.optionalString hasPiThemes ''
+    mkdir -p $out/.pi/agent/themes
+    for f in ${piThemesDir}/*.json; do
+      if [ -f "$f" ]; then
+        cp -L "$f" $out/.pi/agent/themes/$(basename "$f")
+      fi
+    done
+  '';
 in
   pkgs.runCommand "dot-agents-stow-tree" {preferLocalBuild = true;} ''
     mkdir -p $out
@@ -76,6 +102,12 @@ in
 
     # Pi-specific skills -> ~/.pi/agent/skills/
     ${copyPiSkills}
+
+    # Pi-specific extensions -> ~/.pi/agent/extensions/
+    ${copyPiExtensions}
+
+    # Pi-specific themes -> ~/.pi/agent/themes/
+    ${copyPiThemes}
 
     # OpenCode-specific skills -> ~/.config/opencode/skills/
     ${copyOpencodeSkills}

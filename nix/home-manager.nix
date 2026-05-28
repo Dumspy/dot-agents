@@ -73,18 +73,18 @@
   });
 
   # --- Auto-discover pi themes ---
-  themesDir = ../themes/pi;
-  hasThemes = builtins.pathExists themesDir;
-  themeFiles =
-    if hasThemes
-    then builtins.attrNames (builtins.readDir themesDir)
+  piThemesDir = ../pi/themes;
+  hasPiThemes = builtins.pathExists piThemesDir;
+  piThemeFiles =
+    if hasPiThemes
+    then builtins.attrNames (builtins.readDir piThemesDir)
     else [];
-  themeNames = map (f: lib.removeSuffix ".json" f) (lib.filter (f: lib.hasSuffix ".json" f) themeFiles);
+  piThemeNames = map (f: lib.removeSuffix ".json" f) (lib.filter (f: lib.hasSuffix ".json" f) piThemeFiles);
   enabledPiThemes =
     if cfg.pi.themes == null
-    then themeNames
+    then piThemeNames
     else cfg.pi.themes;
-  missingPiThemes = lib.filter (name: !lib.elem name themeNames) enabledPiThemes;
+  missingPiThemes = lib.filter (name: !lib.elem name piThemeNames) enabledPiThemes;
 
   # --- Auto-discover opencode commands ---
   commandsDir = ../opencode/commands;
@@ -221,7 +221,7 @@ in {
         default = null;
         description = ''
           Pi-specific themes to install to ~/.pi/agent/themes/.
-          Set to `null` to auto-discover all themes in themes/pi/.
+          Set to `null` to auto-discover all themes in pi/themes/.
           Set to `[]` to disable themes.
         '';
       };
@@ -258,7 +258,7 @@ in {
       }
       {
         assertion = missingPiThemes == [];
-        message = "dot-agents: unknown pi theme(s) requested: ${lib.concatStringsSep ", " missingPiThemes}. Available: ${lib.concatStringsSep ", " themeNames}";
+        message = "dot-agents: unknown pi theme(s) requested: ${lib.concatStringsSep ", " missingPiThemes}. Available: ${lib.concatStringsSep ", " piThemeNames}";
       }
     ];
 
@@ -320,7 +320,7 @@ in {
       (lib.mkIf (enabledPiThemes != []) (
         lib.listToAttrs (map (name: {
             name = ".pi/agent/themes/${name}.json";
-            value.source = "${themesDir}/${name}.json";
+            value.source = "${piThemesDir}/${name}.json";
           })
           enabledPiThemes)
       ))
