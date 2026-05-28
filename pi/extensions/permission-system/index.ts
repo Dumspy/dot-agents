@@ -215,7 +215,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 			return logAndAllow(toolName, value, ctx.cwd, "allowed", "no rules configured for tool");
 		}
 
-		const permission = resolvePermission(toolRules, value);
+		const permission = resolvePermission(toolRules, value, toolName === "bash" ? { bash: true } : undefined);
 
 		if (permission === "allow") {
 			return logAndAllow(toolName, value, ctx.cwd, "allowed", "rule: allow");

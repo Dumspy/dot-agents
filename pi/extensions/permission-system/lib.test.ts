@@ -485,49 +485,50 @@ describe("DEFAULT_CONFIG — intended behavior", () => {
 	});
 
 	describe("bash — ask by default, allow on safe commands, deny dangerous ones", () => {
-		it("allows ls commands (without path slashes)", () => {
-			expect(resolvePermission(bashRules, "ls -la")).toBe("allow");
-			expect(resolvePermission(bashRules, "ls")).toBe("allow");
-			// Paths with '/' fall through to ask because picomatch '*' does not match '/'
-			expect(resolvePermission(bashRules, "ls src/components")).toBe("ask");
+		it("allows ls commands", () => {
+			expect(resolvePermission(bashRules, "ls -la", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "ls", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "ls src/components", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "ls -la .github/workflows/", { bash: true })).toBe("allow");
 		});
 
 		it("allows pwd", () => {
-			expect(resolvePermission(bashRules, "pwd")).toBe("allow");
+			expect(resolvePermission(bashRules, "pwd", { bash: true })).toBe("allow");
 		});
 
 		it("allows safe git read-only commands", () => {
-			expect(resolvePermission(bashRules, "git status")).toBe("allow");
-			expect(resolvePermission(bashRules, "git status -s")).toBe("allow");
-			expect(resolvePermission(bashRules, "git diff")).toBe("allow");
-			expect(resolvePermission(bashRules, "git log --oneline")).toBe("allow");
-			expect(resolvePermission(bashRules, "git branch")).toBe("allow");
+			expect(resolvePermission(bashRules, "git status", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "git status -s", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "git diff", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "git log --oneline", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "git branch", { bash: true })).toBe("allow");
+			expect(resolvePermission(bashRules, "git diff .github/workflows/ci.yml", { bash: true })).toBe("allow");
 		});
 
-		it("denies dangerous commands without slashes", () => {
-			expect(resolvePermission(bashRules, "rm -rf node_modules")).toBe("deny");
-			expect(resolvePermission(bashRules, "sudo apt-get update")).toBe("deny");
-			expect(resolvePermission(bashRules, "eval rm -rf node_modules")).toBe("deny");
-			expect(resolvePermission(bashRules, "source .env")).toBe("deny");
+		it("denies dangerous commands", () => {
+			expect(resolvePermission(bashRules, "rm -rf node_modules", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "rm -rf /", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "sudo apt-get update", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "eval rm -rf node_modules", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "source .env", { bash: true })).toBe("deny");
 		});
 
 		it("falls through to ask for everything else", () => {
-			expect(resolvePermission(bashRules, "rm -rf /")).toBe("ask");
-			expect(resolvePermission(bashRules, "curl example.com")).toBe("ask");
-			expect(resolvePermission(bashRules, "npm run build")).toBe("ask");
-			expect(resolvePermission(bashRules, "cargo test")).toBe("ask");
-			expect(resolvePermission(bashRules, "git push origin main")).toBe("ask");
-			expect(resolvePermission(bashRules, "tsc --noEmit")).toBe("ask");
-			expect(resolvePermission(bashRules, "npx some-package")).toBe("ask");
+			expect(resolvePermission(bashRules, "curl example.com", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "npm run build", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "cargo test", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "git push origin main", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "tsc --noEmit", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "npx some-package", { bash: true })).toBe("ask");
 		});
 
 		it("does not cache denials — repeated commands still resolve to ask", () => {
 			// The permission rule engine is stateless. If a user denies a command
 			// in the UI, the next attempt for the same command must re-prompt.
-			expect(resolvePermission(bashRules, "npm test")).toBe("ask");
-			expect(resolvePermission(bashRules, "npm test")).toBe("ask");
-			expect(resolvePermission(bashRules, "make build")).toBe("ask");
-			expect(resolvePermission(bashRules, "make build")).toBe("ask");
+			expect(resolvePermission(bashRules, "npm test", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "npm test", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "make build", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "make build", { bash: true })).toBe("ask");
 		});
 	});
 

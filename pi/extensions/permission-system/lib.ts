@@ -183,8 +183,8 @@ export function deepMerge(base: PermissionsConfig, override: Partial<Permissions
 	return result;
 }
 
-export function matchGlob(pattern: string, value: string): boolean {
-	return isMatch(value, pattern, { dot: true });
+export function matchGlob(pattern: string, value: string, options?: { bash?: boolean }): boolean {
+	return isMatch(value, pattern, { dot: true, ...options });
 }
 
 /**
@@ -202,13 +202,13 @@ function getBashCommand(input: Record<string, unknown>): string {
 	return stripGitEnvPrefix(raw);
 }
 
-function findBestPatternMatch<T>(rules: Record<string, T> | undefined, value: string): T | null {
+function findBestPatternMatch<T>(rules: Record<string, T> | undefined, value: string, options?: { bash?: boolean }): T | null {
 	if (!rules) return null;
 
 	let bestMatch: { pattern: string; value: T } | null = null;
 	for (const [pattern, ruleValue] of Object.entries(rules)) {
 		if (pattern === value) return ruleValue;
-		if (matchGlob(pattern, value)) {
+		if (matchGlob(pattern, value, options)) {
 			if (!bestMatch || pattern.length > bestMatch.pattern.length) {
 				bestMatch = { pattern, value: ruleValue };
 			}
@@ -235,10 +235,11 @@ export function getToolValue(toolName: string, input: Record<string, unknown>): 
 export function resolvePermission(
 	rules: PermissionValue | ToolPermissions | undefined,
 	value: string,
+	options?: { bash?: boolean },
 ): PermissionValue {
 	if (rules === undefined) return "ask";
 	if (typeof rules === "string") return rules;
-	return findBestPatternMatch(rules, value) ?? "ask";
+	return findBestPatternMatch(rules, value, options) ?? "ask";
 }
 
 export function resolveMask(toolMasks: ToolMasks | undefined, value: string): MaskPattern | null {
