@@ -2,6 +2,9 @@
 result
 result-*
 
+# Node
+node_modules
+
 # Editor
 *.swp
 *.swo
@@ -11,3 +14,7 @@ result-*
 
 # OS
 .DS_Store
+.pre-commit-config.yaml
+
+# direnv
+.direnv

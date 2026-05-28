@@ -9,12 +9,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # External skill sources
-    vercel-agent-skills = {
-      url = "github:vercel-labs/agent-skills";
-      flake = false;
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # External skill sources
     agent-browser = {
       url = "github:vercel-labs/agent-browser";
       flake = false;
@@ -24,27 +24,15 @@
       url = "github:anthropics/skills";
       flake = false;
     };
-
-    dex-agent-skills = {
-      url = "github:dcramer/dex";
-      flake = false;
-    };
-
-    sentry-skills = {
-      url = "github:getsentry/skills";
-      flake = false;
-    };
   };
 
   outputs = {
     self,
     nixpkgs,
     home-manager,
-    vercel-agent-skills,
+    git-hooks,
     agent-browser,
     anthropics-agent-skills,
-    dex-agent-skills,
-    sentry-skills,
   }: let
     systems = [
       "x86_64-linux"
@@ -57,16 +45,23 @@
 
     eachSystem = f:
       lib.genAttrs systems (
-        system:
+        system: let
+          pkgs = nixpkgs.legacyPackages.${system};
+          pre-commit-check = git-hooks.lib.${system}.run {
+            src = ./.;
+            hooks = {
+              alejandra.enable = true;
+            };
+          };
+        in
           f {
-            inherit system;
-            pkgs = nixpkgs.legacyPackages.${system};
+            inherit system pkgs pre-commit-check;
           }
       );
 
     # External skill sources passed to the registry
     externalSources = {
-      inherit vercel-agent-skills agent-browser anthropics-agent-skills dex-agent-skills sentry-skills;
+      inherit agent-browser anthropics-agent-skills;
     };
   in {
     packages = eachSystem (
@@ -82,10 +77,27 @@
         }
     );
 
-    homeModules =
-      import ./nix/home-modules.nix {inherit self lib;}
-      // {
-        default = import ./nix/home-manager.nix {inherit self externalSources;};
+    formatter = eachSystem ({pkgs, ...}: pkgs.alejandra);
+
+    checks = eachSystem ({pre-commit-check, ...}: {
+      inherit pre-commit-check;
+    });
+
+    devShells = eachSystem ({
+      pkgs,
+      pre-commit-check,
+      ...
+    }: {
+      default = pkgs.mkShell {
+        shellHook =
+          pre-commit-check.shellHook
+          + ''
+            cd pi && npm install
+          '';
+        packages = [pkgs.nodejs pkgs.rsync pkgs.alejandra];
       };
+    });
+
+    homeModules.default = import ./nix/home-manager.nix {inherit self externalSources;};
   };
 }

@@ -1,5 +1,4 @@
-# Shared options imported by every per-skill homeModule and the legacy
-# programs.dot-agents bundle module.
+# Shared options for the programs.dot-agents Home Manager module.
 {lib, ...}: {
   options.programs.dot-agents = {
     enable = lib.mkEnableOption "dot-agents universal agent configuration";

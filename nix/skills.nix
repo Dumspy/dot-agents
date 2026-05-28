@@ -16,25 +16,12 @@
 in {
   # --- Local skills ---
   # Paths are relative to nix/skills.nix, so ../skills/ points to repo root skills/
-  dependabot-solver = local ../skills/dependabot-solver;
-  "pr-review-resolver" = local ../skills/pr-review-resolver;
-  librarian = local ../skills/librarian;
+  init-deep = local ../skills/init-deep;
+  "grill-me" = local ../skills/grill-me;
 
   # --- Anthropic ---
   "skill-creator" = external externalSources.anthropics-agent-skills "skills" "skill-creator";
-  "frontend-design" = external externalSources.anthropics-agent-skills "skills" "frontend-design";
-
-  # --- Vercel ---
-  "react-best-practices" = external externalSources.vercel-agent-skills "skills" "react-best-practices";
-  "web-design-guidelines" = external externalSources.vercel-agent-skills "skills" "web-design-guidelines";
 
   # --- Agent Browser ---
   "agent-browser" = external externalSources.agent-browser "skills" "agent-browser";
-
-  # --- Dex ---
-  "dex" = external externalSources.dex-agent-skills "plugins/dex/skills" "dex";
-  "dex-plan" = external externalSources.dex-agent-skills "plugins/dex/skills" "dex-plan";
-
-  # --- Sentry ---
-  "doc-coauthoring" = external externalSources.sentry-skills "skills" "doc-coauthoring";
 }
