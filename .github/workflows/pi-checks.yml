@@ -1,0 +1,33 @@
+name: Pi Checks
+
+on:
+  push:
+    branches:
+      - development
+    paths:
+      - "pi/**"
+  pull_request:
+    paths:
+      - "pi/**"
+  workflow_dispatch:
+
+jobs:
+  pi-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Install NPM dependencies
+        run: nix develop -c bash -c "npm ci"
+
+      - name: Type check
+        run: nix develop -c bash -c "npm run check"
+
+      - name: Run tests
+        run: nix develop -c bash -c "npm test"

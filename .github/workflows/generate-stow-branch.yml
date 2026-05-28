@@ -9,7 +9,7 @@ jobs:
   generate-stow:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main
+      - name: Checkout development
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -23,6 +23,8 @@ jobs:
           # Copy the result to a home/ directory
           mkdir -p home
           cp -rL ./result/. home/
+          # Nix store files are read-only; make them writable so we can delete later
+          chmod -R +w home/
 
       - name: Commit to stow branch
         run: |
@@ -37,8 +39,8 @@ jobs:
             git rm -rf .
           fi
 
-          # Remove everything except .git
-          find . -mindepth 1 -not -path './.git/*' -not -name '.git' -delete
+          # Remove everything except .git and home (which we'll copy from)
+          find . -mindepth 1 -not -path './.git/*' -not -name '.git' -not -path './home/*' -not -name 'home' -delete
 
           # Copy home directory
           cp -r home/. .
@@ -50,7 +52,7 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Update stow tree from main ($(git rev-parse --short HEAD))"
+          git commit -m "Update stow tree from development ($(git rev-parse --short HEAD))"
 
       - name: Push stow branch
         run: git push origin stow --force
