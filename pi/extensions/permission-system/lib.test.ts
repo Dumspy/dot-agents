@@ -520,6 +520,15 @@ describe("DEFAULT_CONFIG — intended behavior", () => {
 			expect(resolvePermission(bashRules, "tsc --noEmit")).toBe("ask");
 			expect(resolvePermission(bashRules, "npx some-package")).toBe("ask");
 		});
+
+		it("does not cache denials — repeated commands still resolve to ask", () => {
+			// The permission rule engine is stateless. If a user denies a command
+			// in the UI, the next attempt for the same command must re-prompt.
+			expect(resolvePermission(bashRules, "npm test")).toBe("ask");
+			expect(resolvePermission(bashRules, "npm test")).toBe("ask");
+			expect(resolvePermission(bashRules, "make build")).toBe("ask");
+			expect(resolvePermission(bashRules, "make build")).toBe("ask");
+		});
 	});
 
 	describe("webfetch — ask by default", () => {
