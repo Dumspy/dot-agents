@@ -2,7 +2,7 @@ name: Generate Stow Branch
 
 on:
   push:
-    branches: [main]
+    branches: [development]
   workflow_dispatch:
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
           nix build .#stow-tree --out-link ./result
           # Copy the result to a home/ directory
           mkdir -p home
-          cp -rL ./result/* home/
+          cp -rL ./result/. home/
 
       - name: Commit to stow branch
         run: |
@@ -41,7 +41,7 @@ jobs:
           find . -mindepth 1 -not -path './.git/*' -not -name '.git' -delete
 
           # Copy home directory
-          cp -r home/* .
+          cp -r home/. .
           rm -rf home
 
           # Commit
