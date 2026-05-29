@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldExit } from "./exit.ts";
+import { shouldExit } from "./index.ts";
 
 describe("shouldExit", () => {
 	it("matches exact 'exit'", () => {
