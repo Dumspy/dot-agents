@@ -73,6 +73,7 @@
       --exclude='*.test.tsx' --exclude='*.spec.tsx' \
       --exclude='test/' --exclude='__tests__/' \
       ${piExtensionsDir}/ $out/.pi/agent/extensions/
+    chmod -R u+w $out/.pi/agent/extensions
   '';
 
   # Copy pi-specific themes
