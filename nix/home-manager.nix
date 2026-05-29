@@ -58,13 +58,22 @@
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = pkgs.callPackage ./pi-node-modules.nix {};
 
-  piExtensionsBundle = pkgs.runCommand "dot-agents-pi-extensions-bundle" {preferLocalBuild = true;} ''
-    mkdir -p $out
-    # Copy all extension files including subdirectories (e.g. permission-system/)
-    cp -rL ${piExtensionsDir}/* $out/
-    # Copy public npm deps that Pi does not provide
-    cp -rL ${piNodeModules}/node_modules $out/node_modules
-  '';
+  piExtensionsBundle =
+    pkgs.runCommand "dot-agents-pi-extensions-bundle" {
+      preferLocalBuild = true;
+      nativeBuildInputs = [pkgs.rsync];
+    } ''
+      mkdir -p $out
+      # Copy extension files excluding tests and their dev-only deps
+      rsync -aL \
+        --exclude='*.test.ts' --exclude='*.test.js' \
+        --exclude='*.spec.ts' --exclude='*.spec.js' \
+        --exclude='*.test.tsx' --exclude='*.spec.tsx' \
+        --exclude='test/' --exclude='__tests__/' \
+        ${piExtensionsDir}/ $out/
+      # Copy public npm deps that Pi does not provide
+      cp -rL ${piNodeModules}/node_modules $out/node_modules
+    '';
 
   # Generate permissions.json from Nix config
   permissionsJson = pkgs.writeText "pi-permissions.json" (builtins.toJSON {

@@ -67,13 +67,12 @@
   hasPiExtensions = builtins.pathExists piExtensionsDir;
   copyPiExtensions = lib.optionalString hasPiExtensions ''
     mkdir -p $out/.pi/agent/extensions
-    for f in ${piExtensionsDir}/*; do
-      if [ -d "$f" ]; then
-        cp -rL "$f" $out/.pi/agent/extensions/$(basename "$f")
-      elif [ -f "$f" ]; then
-        cp -L "$f" $out/.pi/agent/extensions/$(basename "$f")
-      fi
-    done
+    ${pkgs.rsync}/bin/rsync -aL \
+      --exclude='*.test.ts' --exclude='*.test.js' \
+      --exclude='*.spec.ts' --exclude='*.spec.js' \
+      --exclude='*.test.tsx' --exclude='*.spec.tsx' \
+      --exclude='test/' --exclude='__tests__/' \
+      ${piExtensionsDir}/ $out/.pi/agent/extensions/
   '';
 
   # Copy pi-specific themes
@@ -88,7 +87,10 @@
     done
   '';
 in
-  pkgs.runCommand "dot-agents-stow-tree" {preferLocalBuild = true;} ''
+  pkgs.runCommand "dot-agents-stow-tree" {
+    preferLocalBuild = true;
+    nativeBuildInputs = [pkgs.rsync];
+  } ''
     mkdir -p $out
 
     # Universal skills -> ~/.agents/skills/
