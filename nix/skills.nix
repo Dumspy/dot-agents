@@ -22,6 +22,5 @@ in {
   # --- Anthropic ---
   "skill-creator" = external externalSources.anthropics-agent-skills "skills" "skill-creator";
 
-  # --- Agent Browser ---
-  "agent-browser" = external externalSources.agent-browser "skills" "agent-browser";
+  # --- Agent Browser (removed: depends on Rust/crates.io, causes CI flakes) ---
 }

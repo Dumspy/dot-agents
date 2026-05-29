@@ -72,6 +72,9 @@
     masks = cfg.pi.masks;
   });
 
+  # Generate keybindings.json from Nix config
+  keybindingsJson = pkgs.writeText "pi-keybindings.json" (builtins.toJSON cfg.pi.keybindings);
+
   # --- Auto-discover pi themes ---
   piThemesDir = ../pi/themes;
   hasPiThemes = builtins.pathExists piThemesDir;
@@ -225,6 +228,23 @@ in {
           Set to `[]` to disable themes.
         '';
       };
+
+      keybindings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.str;
+        default = {};
+        description = ''
+          Pi keybinding overrides, written to ~/.pi/agent/keybindings.json.
+          Each key is a keybinding action id, each value is the key or keys
+          (space-separated for multiple). Use this to override defaults
+          per-host (e.g. remap pasteImage on WSL where Ctrl+V is intercepted).
+
+          Example:
+          {
+            "app.clipboard.pasteImage" = "alt+v";
+            "tui.input.newLine" = "ctrl+j";
+          }
+        '';
+      };
     };
 
     opencode = {
@@ -315,6 +335,10 @@ in {
       # Pi permissions
       (lib.mkIf (cfg.pi.permissions != {} || cfg.pi.masks != {}) {
         ".pi/agent/permissions.json".source = permissionsJson;
+      })
+      # Pi keybindings
+      (lib.mkIf (cfg.pi.keybindings != {}) {
+        ".pi/agent/keybindings.json".source = keybindingsJson;
       })
       # Pi themes
       (lib.mkIf (enabledPiThemes != []) (

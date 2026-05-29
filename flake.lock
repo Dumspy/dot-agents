@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "agent-browser": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1777477152,
-        "narHash": "sha256-bTYekrFtUtbyJXudjQYe7sH0FTuhcGzcSDCN7qRciv8=",
-        "owner": "vercel-labs",
-        "repo": "agent-browser",
-        "rev": "7ada3384e2afb5f3c43d9106389da86d8f807dca",
-        "type": "github"
-      },
-      "original": {
-        "owner": "vercel-labs",
-        "repo": "agent-browser",
-        "type": "github"
-      }
-    },
     "anthropics-agent-skills": {
       "flake": false,
       "locked": {
@@ -129,7 +113,6 @@
     },
     "root": {
       "inputs": {
-        "agent-browser": "agent-browser",
         "anthropics-agent-skills": "anthropics-agent-skills",
         "git-hooks": "git-hooks",
         "home-manager": "home-manager",

@@ -15,11 +15,6 @@
     };
 
     # External skill sources
-    agent-browser = {
-      url = "github:vercel-labs/agent-browser";
-      flake = false;
-    };
-
     anthropics-agent-skills = {
       url = "github:anthropics/skills";
       flake = false;
@@ -31,7 +26,6 @@
     nixpkgs,
     home-manager,
     git-hooks,
-    agent-browser,
     anthropics-agent-skills,
   }: let
     systems = [
@@ -61,7 +55,7 @@
 
     # External skill sources passed to the registry
     externalSources = {
-      inherit agent-browser anthropics-agent-skills;
+      inherit anthropics-agent-skills;
     };
   in {
     packages = eachSystem (
