@@ -71,6 +71,7 @@
         --exclude='*.test.tsx' --exclude='*.spec.tsx' \
         --exclude='test/' --exclude='__tests__/' \
         ${piExtensionsDir}/ $out/
+      chmod -R u+w $out
       # Copy public npm deps that Pi does not provide
       cp -rL ${piNodeModules}/node_modules $out/node_modules
     '';
