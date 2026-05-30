@@ -71,7 +71,6 @@
         --exclude='*.test.tsx' --exclude='*.spec.tsx' \
         --exclude='test/' --exclude='__tests__/' \
         ${piExtensionsDir}/ $out/
-      chmod -R u+w $out
       # Copy public npm deps that Pi does not provide
       cp -rL ${piNodeModules}/node_modules $out/node_modules
     '';
@@ -155,6 +154,7 @@
     lib.hm.dag.entryAfter ["writeBoundary"] ''
       mkdir -p "${destPath}"
       ${pkgs.rsync}/bin/rsync ${rsyncFlags} "${bundle}/" "${destPath}/"
+      chmod -R u+w "${destPath}"
     '';
 in {
   imports = [./home-manager-common.nix];
