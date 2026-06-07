@@ -50,8 +50,8 @@ function parseNumber(value: number | string | undefined): number | undefined {
 function parseBoolean(value: boolean | string | undefined): boolean | undefined {
 	if (typeof value === "boolean") return value;
 	if (typeof value === "string") {
-		if (value === "true") return true;
-		if (value === "false") return false;
+		if (value === "true" || value === "1") return true;
+		if (value === "false" || value === "0") return false;
 	}
 	return undefined;
 }
@@ -211,7 +211,11 @@ function canonicalDiscoveredModels(modelNames: string[], infoByName: Map<string,
 	return Array.from(grouped.values()).sort();
 }
 
-export function buildProviderModel(modelName: string, modelInfo: RawModelInfo | undefined): ProviderModelConfig | undefined {
+export function buildProviderModel(
+	modelName: string,
+	modelInfo: RawModelInfo | undefined,
+	hasModelInfo: boolean = false,
+): ProviderModelConfig | undefined {
 	if (isAggregateAlias(modelName)) return undefined;
 	if (!isTextModel(modelInfo?.mode)) return undefined;
 
@@ -219,7 +223,7 @@ export function buildProviderModel(modelName: string, modelInfo: RawModelInfo | 
 		parseBoolean(modelInfo?.supports_function_calling),
 		parseBoolean(modelInfo?.supports_parallel_function_calling),
 	);
-	if (supportsTools === false) return undefined;
+	if (hasModelInfo ? supportsTools !== true : supportsTools === false) return undefined;
 
 	const contextWindow = pickFirst(
 		parseNumber(modelInfo?.max_input_tokens),
@@ -277,7 +281,7 @@ export function buildProviderModels(rawModels: RawModelListItem[], rawModelInfo:
 
 	return filteredNames
 		.filter((modelName) => (hasModelInfo ? true : !shouldSkipFallbackModel(modelName)))
-		.map((modelName) => buildProviderModel(modelName, infoByName.get(modelName)))
+		.map((modelName) => buildProviderModel(modelName, infoByName.get(modelName), hasModelInfo))
 		.filter((model): model is ProviderModelConfig => model !== undefined);
 }
 
