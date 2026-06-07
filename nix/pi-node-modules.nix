@@ -4,20 +4,8 @@ pkgs.stdenvNoCC.mkDerivation {
 
   src = pkgs.runCommand "pi-extensions-runtime-source" {} ''
     mkdir -p $out
-    cat > $out/package.json << 'JSON'
-    {
-      "name": "pi-extensions-runtime",
-      "version": "1.0.0",
-      "dependencies": {
-        "picomatch": "4.0.4",
-        "html-to-text": "9.0.5",
-        "linkedom": "0.18.12",
-        "turndown": "7.2.4",
-        "turndown-plugin-gfm": "1.0.2"
-      }
-    }
-    JSON
-    cp ${../pi/package-lock.runtime.json} $out/package-lock.json
+    cp ${../pi/package.json} $out/package.json
+    cp ${../pi/package-lock.json} $out/package-lock.json
   '';
 
   nativeBuildInputs = [pkgs.nodejs pkgs.cacert];
@@ -44,7 +32,9 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
-  outputHash = "sha256-GuuJhbzrc7jA/+tiBxO84wh486/jK4YrbpGK9abWnxc=";
+  # NOTE: update this hash after changing dependencies in pi/package.json.
+  # Run: nix build --impure --expr 'let pkgs = import <nixpkgs> {}; in pkgs.callPackage ./nix/pi-node-modules.nix {}' --rebuild 2>&1 | grep 'got:'
+  outputHash = "sha256-mztbSQ3vE6Px1XFvh8VGRx/PP2fzkzbKOjKH1rOrxxY=";
   outputHashAlgo = "sha256";
   outputHashMode = "recursive";
   dontFixup = true;
