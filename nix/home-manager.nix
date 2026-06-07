@@ -72,8 +72,6 @@
         --exclude='test/' --exclude='__tests__/' \
         ${piExtensionsDir}/ $out/
       chmod -R u+w $out
-      # Copy public npm deps that Pi does not provide
-      cp -rL ${piNodeModules}/node_modules $out/node_modules
     '';
 
   # Generate permissions.json from Nix config
@@ -342,6 +340,11 @@ in {
       # Pi extensions (link mode only; rsync mode uses activation)
       (lib.mkIf (cfg.structure == "link" && enabledPiExtensions != []) {
         ".pi/agent/extensions".source = piExtensionsBundle;
+      })
+      # Pi extension runtime dependencies
+      (lib.mkIf (enabledPiExtensions != []) {
+        ".pi/agent/package.json".source = piDir + "/package.json";
+        ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
       # Pi permissions
       (lib.mkIf (cfg.pi.permissions != {} || cfg.pi.masks != {}) {

@@ -87,6 +87,14 @@
       fi
     done
   '';
+
+  # Copy root workspace package files for stow users
+  piDir = ../pi;
+  copyPiPackageJson = ''
+    mkdir -p $out/.pi/agent
+    cp -L ${piDir}/package.json $out/.pi/agent/package.json
+    cp -L ${piDir}/package-lock.json $out/.pi/agent/package-lock.json
+  '';
 in
   pkgs.runCommand "dot-agents-stow-tree" {
     preferLocalBuild = true;
@@ -111,6 +119,9 @@ in
 
     # Pi-specific themes -> ~/.pi/agent/themes/
     ${copyPiThemes}
+
+    # Root workspace package files -> ~/.pi/agent/
+    ${copyPiPackageJson}
 
     # OpenCode-specific skills -> ~/.config/opencode/skills/
     ${copyOpencodeSkills}
