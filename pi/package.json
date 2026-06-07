@@ -20,6 +20,7 @@
     "typebox": "*"
   },
   "devDependencies": {
+    "@types/picomatch": "^4.0.3",
     "@types/turndown": "^5.0.6",
     "typescript": "^5.5.0",
     "vitest": "^4.1.7"

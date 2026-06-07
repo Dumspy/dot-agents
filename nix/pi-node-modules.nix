@@ -33,8 +33,8 @@ pkgs.stdenvNoCC.mkDerivation {
   '';
 
   # NOTE: update this hash after changing dependencies in pi/package.json.
-  # Run: nix build .#pi-node-modules 2>&1 | grep 'got:'
-  outputHash = "sha256-GuuJhbzrc7jA/+tiBxO84wh486/jK4YrbpGK9abWnxc=";
+  # Run: nix build --impure --expr 'let pkgs = import <nixpkgs> {}; in pkgs.callPackage ./nix/pi-node-modules.nix {}' --rebuild 2>&1 | grep 'got:'
+  outputHash = "sha256-mztbSQ3vE6Px1XFvh8VGRx/PP2fzkzbKOjKH1rOrxxY=";
   outputHashAlgo = "sha256";
   outputHashMode = "recursive";
   dontFixup = true;
