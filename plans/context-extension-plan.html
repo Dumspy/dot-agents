@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>/context Extension — Design Plan</title>
+<style>
+  :root {
+    --bg: #1a1b26;
+    --surface: #24283b;
+    --surface2: #2f3346;
+    --border: #3b4261;
+    --text: #c0caf5;
+    --text-muted: #565f89;
+    --accent: #7aa2f7;
+    --success: #9ece6a;
+    --warning: #e0af68;
+    --error: #f7768e;
+    --purple: #bb9af7;
+    --cyan: #7dcfff;
+    --orange: #ff9e64;
+    --pink: #f7768e;
+    --teal: #73daca;
+    --bar-bg: #292e42;
+    --radius: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.5rem;
+  }
+
+  h2 {
+    font-size: 1.3rem;
+    color: var(--purple);
+    margin: 2rem 0 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  h2::before {
+    content: '##';
+    color: var(--text-muted);
+    font-weight: normal;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    color: var(--cyan);
+    margin: 1.5rem 0 0.5rem;
+  }
+
+  p, li { color: var(--text); margin-bottom: 0.5rem; }
+  ul { padding-left: 1.5rem; }
+  li { margin-bottom: 0.3rem; }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+
+  .badge-resolved { background: #1a3a2a; color: var(--success); border: 1px solid var(--success); }
+  .badge-pending { background: #3a2a1a; color: var(--warning); border: 1px solid var(--warning); }
+
+  .decisions {
+    display: grid;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+
+  .decision {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    display: grid;
+    grid-template-columns: 2rem 1fr auto;
+    align-items: start;
+    gap: 0.75rem;
+  }
+
+  .decision .num {
+    color: var(--accent);
+    font-weight: bold;
+    text-align: center;
+  }
+
+  .decision .label {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  .decision .value {
+    color: var(--text);
+  }
+
+  /* Wireframe styles */
+  .wireframe-container {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 2rem 0;
+  }
+
+  .wireframe {
+    background: #0f0f14;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0;
+    width: 420px;
+    font-size: 0.82rem;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  .wireframe:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+
+  .wireframe.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px rgba(122, 162, 247, 0.15);
+  }
+
+  .wireframe-label {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .wf-border {
+    color: var(--accent);
+    padding: 0.25rem 0;
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .wf-title {
+    padding: 0.4rem 0.75rem;
+    font-weight: bold;
+    color: var(--accent);
+  }
+
+  .wf-subtitle {
+    padding: 0 0.75rem 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .wf-item {
+    padding: 0.2rem 0.75rem;
+    display: grid;
+    grid-template-columns: 1.5rem 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .wf-item.selected {
+    background: rgba(122, 162, 247, 0.1);
+  }
+
+  .wf-item .cursor { color: var(--accent); }
+  .wf-item .name { color: var(--text); }
+  .wf-item .tokens { color: var(--text-muted); text-align: right; }
+  .wf-item .pct { color: var(--warning); font-size: 0.75rem; margin-left: 0.25rem; }
+
+  .wf-bar-container {
+    padding: 0 0.75rem;
+    margin: 0.15rem 0;
+  }
+
+  .wf-bar {
+    height: 4px;
+    background: var(--bar-bg);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .wf-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s;
+  }
+
+  .wf-help {
+    padding: 0.4rem 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    border-top: 1px solid var(--border);
+    margin-top: 0.25rem;
+  }
+
+  .wf-summary {
+    padding: 0.3rem 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .wf-summary .model { color: var(--cyan); }
+  .wf-summary .usage { color: var(--warning); }
+
+  /* Color coding for categories */
+  .cat-system { color: var(--teal); }
+  .cat-tools { color: var(--purple); }
+  .cat-tooluse { color: var(--orange); }
+  .cat-skills { color: var(--pink); }
+  .cat-context { color: var(--cyan); }
+  .cat-messages { color: var(--success); }
+  .cat-images { color: var(--warning); }
+  .cat-compaction { color: var(--accent); }
+  .cat-free { color: var(--text-muted); }
+
+  .bar-system { background: var(--teal); }
+  .bar-tools { background: var(--purple); }
+  .bar-tooluse { background: var(--orange); }
+  .bar-skills { background: var(--pink); }
+  .bar-context { background: var(--cyan); }
+  .bar-messages { background: var(--success); }
+  .bar-images { background: var(--warning); }
+  .bar-compaction { background: var(--accent); }
+  .bar-free { background: var(--text-muted); }
+
+  /* Architecture diagram */
+  .arch {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin: 1rem 0;
+    overflow-x: auto;
+  }
+
+  .arch pre {
+    color: var(--text);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: pre;
+  }
+
+  .arch .highlight { color: var(--accent); }
+  .arch .highlight2 { color: var(--purple); }
+  .arch .highlight3 { color: var(--success); }
+  .arch .muted { color: var(--text-muted); }
+
+  /* File tree */
+  .file-tree {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.5rem;
+    font-size: 0.85rem;
+    margin: 1rem 0;
+  }
+
+  .file-tree .dir { color: var(--accent); }
+  .file-tree .file { color: var(--text); }
+  .file-tree .comment { color: var(--text-muted); font-style: italic; }
+
+  /* Implementation steps */
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+  }
+
+  .steps li {
+    counter-increment: step;
+    padding: 0.75rem 1rem;
+    padding-left: 3rem;
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 0.5rem;
+  }
+
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 1rem;
+    top: 0.75rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    background: var(--accent);
+    color: var(--bg);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.8rem;
+  }
+
+  .steps li .step-title {
+    font-weight: bold;
+    color: var(--text);
+  }
+
+  .steps li .step-desc {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+    justify-content: center;
+  }
+
+  .flow-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    text-align: center;
+  }
+
+  .flow-box.event { border-color: var(--accent); color: var(--accent); }
+  .flow-box.action { border-color: var(--success); color: var(--success); }
+  .flow-box.data { border-color: var(--purple); color: var(--purple); }
+  .flow-arrow { color: var(--text-muted); font-size: 1.2rem; }
+
+  /* Navigation */
+  .nav {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    font-size: 0.75rem;
+    z-index: 100;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    display: block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .nav a:hover { color: var(--accent); background: var(--surface2); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .wireframe-container { flex-direction: column; align-items: center; }
+    .wireframe { width: 100%; max-width: 420px; }
+    .nav { display: none; }
+  }
+
+  /* Mockup interaction */
+  .mockup-screen { display: none; }
+  .mockup-screen.active { display: block; }
+
+  .screen-nav {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+
+  .screen-nav button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 0.4rem 1rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+  }
+
+  .screen-nav button.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(122, 162, 247, 0.1);
+  }
+
+  .screen-nav button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .interaction-hint {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: 0.75rem;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<h1>/context Extension — Design Plan</h1>
+<p class="subtitle">Pi extension for context window token consumption breakdown &bull; 9 decisions resolved &bull; 2026-06-12</p>
+
+<nav class="nav">
+  <a href="#decisions">Decisions</a>
+  <a href="#wireframes">Wireframes</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#data-flow">Data Flow</a>
+  <a href="#file-structure">File Structure</a>
+  <a href="#implementation">Implementation</a>
+  <a href="#open-questions">Open Questions</a>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="decisions">Decisions</h2>
+
+<div class="decisions">
+  <div class="decision">
+    <div class="num">1</div>
+    <div>
+      <div class="label">Command</div>
+      <div class="value">New <code>/context</code> command — don't modify <code>/session</code></div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">2</div>
+    <div>
+      <div class="label">Categories</div>
+      <div class="value">System prompt, context files (AGENTS.md), skills, tool definitions, tool usage, conversation history, images, compaction summaries</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">3</div>
+    <div>
+      <div class="label">Tool Breakdown</div>
+      <div class="value">Both definitions (schema cost per tool) and usage (calls + results), with per-tool drill-down into individual calls</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">4</div>
+    <div>
+      <div class="label">Token Counting</div>
+      <div class="value">Char-based estimation (<code>chars / 3.5</code>) with real <code>usage.input</code> totals from API for validation</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">5</div>
+    <div>
+      <div class="label">UI</div>
+      <div class="value">Interactive overlay with drill-down navigation (SelectList + DynamicBorder pattern)</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">6</div>
+    <div>
+      <div class="label">Scope</div>
+      <div class="value">Current context window — "what's in my context right now"</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">7</div>
+    <div>
+      <div class="label">Implementation</div>
+      <div class="value">Extension in dot-agents repo (<code>pi/extensions/context/</code>)</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">8</div>
+    <div>
+      <div class="label">Data Access</div>
+      <div class="value">Capture from <code>before_agent_start</code> event's <code>systemPromptOptions</code>, walk session entries for per-tool usage, use <code>ctx.getContextUsage()</code> for window totals</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">9</div>
+    <div>
+      <div class="label">Drill-down Depth</div>
+      <div class="value">Tool → individual calls (one level deep). Each call shows estimated token cost (args + result content)</div>
+    </div>
+    <span class="badge badge-resolved">resolved</span>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="wireframes">UI Wireframes</h2>
+
+<p>Click the navigation buttons to see each screen of the drill-down flow:</p>
+
+<div class="screen-nav">
+  <button class="active" onclick="showScreen('main')">Main Breakdown</button>
+  <button onclick="showScreen('tool-usage')">Tool Usage Drill-down</button>
+  <button onclick="showScreen('tool-calls')">Individual Calls</button>
+  <button onclick="showScreen('tool-defs')">Tool Definitions</button>
+</div>
+
+<div class="wireframe-container">
+
+  <!-- Screen 1: Main breakdown -->
+  <div class="mockup-screen active" id="screen-main">
+    <div class="wireframe active">
+      <div class="wf-border">┌──────────────────────────────────────────────┐</div>
+      <div class="wf-title">Context Usage</div>
+      <div class="wf-summary">
+        <span class="model">claude-sonnet-4-20250514</span>
+        <span class="usage">47.2k / 200k (23.6%)</span>
+      </div>
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+
+      <div class="wf-item">
+        <span class="cursor">&rsaquo;</span>
+        <span class="name cat-tooluse">Tool use &amp; results</span>
+        <span><span class="tokens">29.2k</span><span class="pct">14.6%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tooluse" style="width:62%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-system">System prompt</span>
+        <span><span class="tokens">5.3k</span><span class="pct">2.7%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-system" style="width:11%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tools">Tool definitions</span>
+        <span><span class="tokens">4.8k</span><span class="pct">2.4%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tools" style="width:10%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-skills">Skills</span>
+        <span><span class="tokens">2.8k</span><span class="pct">1.4%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-skills" style="width:6%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-context">Context files</span>
+        <span><span class="tokens">2.3k</span><span class="pct">1.1%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-context" style="width:5%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-messages">Messages</span>
+        <span><span class="tokens">1.6k</span><span class="pct">0.8%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-messages" style="width:3%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-free">Free space</span>
+        <span><span class="tokens">152.8k</span><span class="pct">76.4%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-free" style="width:76%"></div></div></div>
+
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+      <div class="wf-help">↑↓ navigate &bull; enter drill-down &bull; esc close &nbsp;&nbsp; estimated ≈ 46.8k / actual 47.2k</div>
+      <div class="wf-border">└──────────────────────────────────────────────┘</div>
+    </div>
+    <div class="wireframe-label">Screen 1: Main Breakdown</div>
+  </div>
+
+  <!-- Screen 2: Tool usage drill-down -->
+  <div class="mockup-screen" id="screen-tool-usage">
+    <div class="wireframe active">
+      <div class="wf-border">┌──────────────────────────────────────────────┐</div>
+      <div class="wf-title">Tool Usage <span style="color:var(--text-muted);font-weight:normal;font-size:0.8rem">← esc to go back</span></div>
+      <div class="wf-summary">
+        <span>Total: 29.2k tokens across 23 calls</span>
+      </div>
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+
+      <div class="wf-item selected">
+        <span class="cursor">&rsaquo;</span>
+        <span class="name cat-tooluse">bash</span>
+        <span><span class="tokens">18.1k</span><span class="pct">62%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tooluse" style="width:62%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tooluse">read</span>
+        <span><span class="tokens">6.3k</span><span class="pct">22%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tooluse" style="width:22%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tooluse">edit</span>
+        <span><span class="tokens">3.2k</span><span class="pct">11%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tooluse" style="width:11%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tooluse">webfetch</span>
+        <span><span class="tokens">1.1k</span><span class="pct">4%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tooluse" style="width:4%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tooluse">write</span>
+        <span><span class="tokens">0.5k</span><span class="pct">2%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tooluse" style="width:2%"></div></div></div>
+
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+      <div class="wf-help">↑↓ navigate &bull; enter show calls &bull; esc back</div>
+      <div class="wf-border">└──────────────────────────────────────────────┘</div>
+    </div>
+    <div class="wireframe-label">Screen 2: Per-tool Breakdown</div>
+  </div>
+
+  <!-- Screen 3: Individual calls -->
+  <div class="mockup-screen" id="screen-tool-calls">
+    <div class="wireframe active">
+      <div class="wf-border">┌──────────────────────────────────────────────┐</div>
+      <div class="wf-title">bash <span style="color:var(--text-muted);font-weight:normal;font-size:0.8rem">15 calls &bull; 18.1k tokens &bull; ← esc back</span></div>
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+
+      <div class="wf-item">
+        <span class="cursor" style="color:var(--text-muted)">1</span>
+        <span class="name" style="color:var(--text-muted)">[bash: find . -name "*.ts" | head]</span>
+        <span class="tokens">0.4k</span>
+      </div>
+      <div class="wf-item">
+        <span class="cursor" style="color:var(--text-muted)">2</span>
+        <span class="name" style="color:var(--text-muted)">[bash: grep -rn "token" dist/]</span>
+        <span class="tokens">1.8k</span>
+      </div>
+      <div class="wf-item selected">
+        <span class="cursor">&rsaquo;</span>
+        <span class="name">[bash: npm test 2>&1]</span>
+        <span class="tokens" style="color:var(--warning)">8.1k</span>
+      </div>
+      <div class="wf-item">
+        <span class="cursor" style="color:var(--text-muted)">4</span>
+        <span class="name" style="color:var(--text-muted)">[bash: cat error.log]</span>
+        <span class="tokens">2.1k</span>
+      </div>
+      <div class="wf-item">
+        <span class="cursor" style="color:var(--text-muted)">5</span>
+        <span class="name" style="color:var(--text-muted)">[bash: ls -la node_modules/]</span>
+        <span class="tokens">0.3k</span>
+      </div>
+      <div class="wf-item">
+        <span class="cursor" style="color:var(--text-muted)">6</span>
+        <span class="name" style="color:var(--text-muted)">[bash: git diff HEAD~1]</span>
+        <span class="tokens">1.2k</span>
+      </div>
+      <div class="wf-item">
+        <span class="cursor" style="color:var(--text-muted)">7</span>
+        <span class="name" style="color:var(--text-muted)">[bash: npm run build]</span>
+        <span class="tokens">0.9k</span>
+      </div>
+      <div class="wf-item">
+        <span class="cursor" style="color:var(--text-muted)">…</span>
+        <span class="name" style="color:var(--text-muted)">8 more calls</span>
+        <span class="tokens">3.3k</span>
+      </div>
+
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+      <div class="wf-help">↑↓ navigate &bull; esc back to tools</div>
+      <div class="wf-border">└──────────────────────────────────────────────┘</div>
+    </div>
+    <div class="wireframe-label">Screen 3: Individual Calls (drill into bash)</div>
+  </div>
+
+  <!-- Screen 4: Tool definitions -->
+  <div class="mockup-screen" id="screen-tool-defs">
+    <div class="wireframe active">
+      <div class="wf-border">┌──────────────────────────────────────────────┐</div>
+      <div class="wf-title">Tool Definitions <span style="color:var(--text-muted);font-weight:normal;font-size:0.8rem">4.8k tokens &bull; ← esc back</span></div>
+      <div class="wf-subtitle">Schema cost per tool (always present in context)</div>
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+
+      <div class="wf-item">
+        <span class="cursor">&rsaquo;</span>
+        <span class="name cat-tools">bash</span>
+        <span><span class="tokens">1.2k</span><span class="pct">25%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tools" style="width:25%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tools">read</span>
+        <span><span class="tokens">0.9k</span><span class="pct">19%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tools" style="width:19%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tools">edit</span>
+        <span><span class="tokens">0.8k</span><span class="pct">17%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tools" style="width:17%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tools">write</span>
+        <span><span class="tokens">0.7k</span><span class="pct">15%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tools" style="width:15%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tools">webfetch</span>
+        <span><span class="tokens">0.5k</span><span class="pct">10%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tools" style="width:10%"></div></div></div>
+
+      <div class="wf-item">
+        <span class="cursor">&nbsp;</span>
+        <span class="name cat-tools">todo, grill-me, skill-creator</span>
+        <span><span class="tokens">0.7k</span><span class="pct">15%</span></span>
+      </div>
+      <div class="wf-bar-container"><div class="wf-bar"><div class="wf-bar-fill bar-tools" style="width:15%"></div></div></div>
+
+      <div class="wf-border">├──────────────────────────────────────────────┤</div>
+      <div class="wf-help">↑↓ navigate &bull; esc back to overview</div>
+      <div class="wf-border">└──────────────────────────────────────────────┘</div>
+    </div>
+    <div class="wireframe-label">Screen 4: Tool Definitions (schema costs)</div>
+  </div>
+
+</div>
+
+<p class="interaction-hint">Use the buttons above to navigate between screens</p>
+
+<!-- ============================================================ -->
+<h2 id="architecture">Architecture</h2>
+
+<div class="arch"><pre>
+<span class="muted">┌─────────────────────────────────────────────────────────┐</span>
+<span class="muted">│</span>                     <span class="highlight">Pi Extension API</span>                     <span class="muted">│</span>
+<span class="muted">├─────────────────────────────────────────────────────────┤</span>
+<span class="muted">│</span>                                                         <span class="muted">│</span>
+<span class="muted">│</span>  <span class="highlight2">Events (data capture)</span>        <span class="highlight3">Command (display)</span>          <span class="muted">│</span>
+<span class="muted">│</span>                                                         <span class="muted">│</span>
+<span class="muted">│</span>  before_agent_start           /context                   <span class="muted">│</span>
+<span class="muted">│</span>  ├─ systemPromptOptions       ├─ Read captured state     <span class="muted">│</span>
+<span class="muted">│</span>  │  ├─ selectedTools          ├─ Walk session entries    <span class="muted">│</span>
+<span class="muted">│</span>  │  ├─ toolSnippets           ├─ Estimate per-category   <span class="muted">│</span>
+<span class="muted">│</span>  │  ├─ contextFiles           ├─ Sum per-tool usage      <span class="muted">│</span>
+<span class="muted">│</span>  │  ├─ skills                 └─ Show overlay UI         <span class="muted">│</span>
+<span class="muted">│</span>  │  └─ promptGuidelines                                   <span class="muted">│</span>
+<span class="muted">│</span>  ├─ Store in extension state                             <span class="muted">│</span>
+<span class="muted">│</span>  └─ (available for /context)                             <span class="muted">│</span>
+<span class="muted">│</span>                                                         <span class="muted">│</span>
+<span class="muted">│</span>  session_start                                          <span class="muted">│</span>
+<span class="muted">│</span>  └─ Restore state from custom entries                   <span class="muted">│</span>
+<span class="muted">│</span>                                                         <span class="muted">│</span>
+<span class="muted">├─────────────────────────────────────────────────────────┤</span>
+<span class="muted">│</span>  <span class="highlight2">Extension State</span> (in-memory, refreshed each turn)        <span class="muted">│</span>
+<span class="muted">│</span>  ├─ systemPrompt: string                                <span class="muted">│</span>
+<span class="muted">│</span>  ├─ tools: { name, schema, snippet }[]                  <span class="muted">│</span>
+<span class="muted">│</span>  ├─ skills: { name, description }[]                     <span class="muted">│</span>
+<span class="muted">│</span>  ├─ contextFiles: { path, content }[]                   <span class="muted">│</span>
+<span class="muted">│</span>  └─ promptGuidelines: string[]                          <span class="muted">│</span>
+<span class="muted">└─────────────────────────────────────────────────────────┘</span>
+</pre></div>
+
+<!-- ============================================================ -->
+<h2 id="data-flow">Data Flow</h2>
+
+<h3>Capture Phase (every turn)</h3>
+<div class="flow">
+  <div class="flow-box event">before_agent_start</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box data">systemPromptOptions</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box action">Store in state</div>
+</div>
+
+<h3>Display Phase (/context command)</h3>
+<div class="flow">
+  <div class="flow-box event">/context</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box data">ctx.getContextUsage()</div>
+  <div class="flow-arrow">+</div>
+  <div class="flow-box data">captured state</div>
+  <div class="flow-arrow">+</div>
+  <div class="flow-box data">session entries</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box action">Estimate &amp; render</div>
+</div>
+
+<h3>Token Estimation</h3>
+<div class="arch"><pre>
+<span class="highlight">estimateTokens(text: string): number</span>
+  └─ Math.ceil(text.length / 3.5)
+
+<span class="highlight">Categories:</span>
+  systemPrompt    = estimateTokens(captured.systemPrompt)
+  tools (defs)    = sum of estimateTokens(tool.schema) for each tool
+  skills          = sum of estimateTokens(skill.description) for each skill
+  contextFiles    = sum of estimateTokens(file.content) for each AGENTS.md
+  messages        = walk session entries, sum message content tokens
+  tool usage      = walk session entries, sum tool call args + results
+  images          = estimate based on image count × average base64 size
+  compaction      = estimateTokens(compaction.summary) if present
+
+<span class="highlight">Validation:</span>
+  estimated_total = sum of all categories
+  actual_total    = ctx.getContextUsage().tokens (from API)
+  Display both: "estimated ≈ 46.8k / actual 47.2k"
+</pre></div>
+
+<!-- ============================================================ -->
+<h2 id="file-structure">File Structure</h2>
+
+<div class="file-tree">
+<span class="dir">pi/extensions/context/</span>
+├── <span class="file">index.ts</span>          <span class="comment"># Entry point: register command + event hooks</span>
+├── <span class="file">types.ts</span>          <span class="comment"># Shared types (CategoryBreakdown, ToolCallInfo, etc.)</span>
+├── <span class="file">estimate.ts</span>       <span class="comment"># Token estimation logic (chars/3.5 + validation)</span>
+├── <span class="file">capture.ts</span>        <span class="comment"># before_agent_start capture + session entry walking</span>
+├── <span class="file">overlay.ts</span>        <span class="comment"># TUI overlay component (SelectList + drill-down)</span>
+└── <span class="file">format.ts</span>         <span class="comment"># Formatting helpers (token display, bar charts, etc.)</span>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="implementation">Implementation Plan</h2>
+
+<ol class="steps">
+  <li>
+    <div class="step-title">Scaffold extension + register /context command</div>
+    <div class="step-desc">Create <code>pi/extensions/context/index.ts</code> with default export, register <code>/context</code> command that shows a placeholder notification. Verify it loads with <code>pi -e ./pi/extensions/context/index.ts</code>.</div>
+  </li>
+  <li>
+    <div class="step-title">Capture system prompt breakdown</div>
+    <div class="step-desc">Hook <code>before_agent_start</code>, capture <code>event.systemPromptOptions</code> into extension state. Store: selectedTools, toolSnippets, contextFiles, skills, promptGuidelines, the full system prompt string.</div>
+  </li>
+  <li>
+    <div class="step-title">Token estimation module</div>
+    <div class="step-desc">Implement <code>estimate.ts</code> with <code>estimateTokens(text)</code> using <code>chars / 3.5</code>. Add category estimation functions that take the captured state and return per-category token counts.</div>
+  </li>
+  <li>
+    <div class="step-title">Session entry walking for tool usage</div>
+    <div class="step-desc">Implement <code>capture.ts</code> functions to walk <code>ctx.sessionManager.getBranch()</code>, identify tool calls (from assistant messages) and tool results, estimate tokens per tool and per call. Group by tool name.</div>
+  </li>
+  <li>
+    <div class="step-title">Main overlay (Screen 1)</div>
+    <div class="step-desc">Build the overlay component using <code>SelectList</code> + <code>DynamicBorder</code>. Show category breakdown sorted by token count descending, with progress bars. Include model name, context usage (from <code>ctx.getContextUsage()</code>), and estimated vs actual validation line.</div>
+  </li>
+  <li>
+    <div class="step-title">Tool usage drill-down (Screen 2)</div>
+    <div class="step-desc">When "Tool use & results" is selected, show per-tool breakdown. Each tool shows total tokens and percentage of tool usage category.</div>
+  </li>
+  <li>
+    <div class="step-title">Individual calls drill-down (Screen 3)</div>
+    <div class="step-desc">When a specific tool is selected from Screen 2, show individual calls with their estimated token cost. Show tool name + truncated arguments as label.</div>
+  </li>
+  <li>
+    <div class="step-title">Tool definitions drill-down (Screen 4)</div>
+    <div class="step-desc">When "Tool definitions" is selected from Screen 1, show per-tool schema costs. Helps identify which tool schemas are most expensive to keep in context.</div>
+  </li>
+  <li>
+    <div class="step-title">Edge cases + polish</div>
+    <div class="step-desc">Handle: before first prompt (show "No data yet"), after compaction (show compaction summary as category), images (estimate from count), empty categories (hide). Add color coding, theme integration.</div>
+  </li>
+  <li>
+    <div class="step-title">Test + iterate</div>
+    <div class="step-desc">Test in real sessions. Compare estimated vs actual totals. Tune the chars/3.5 divisor if consistently off. Add to dot-agents repo for deployment via Nix/Home Manager.</div>
+  </li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="open-questions">Open Questions / Defaults</h2>
+
+<div class="decisions">
+  <div class="decision">
+    <div class="num">?</div>
+    <div>
+      <div class="label">Free space category</div>
+      <div class="value"><strong>Default: Yes</strong> — show "Free space" like Claude Code, calculated as contextWindow - estimated total. Helps visualize how much room is left.</div>
+    </div>
+    <span class="badge badge-pending">default</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">?</div>
+    <div>
+      <div class="label">Before first prompt</div>
+      <div class="value"><strong>Default: Show partial view</strong> — display system prompt, tool definitions, skills, and context files (these exist before any prompt). Show "No messages yet" for conversation categories. <code>before_agent_start</code> hasn't fired, so read from <code>ctx.getSystemPrompt()</code> directly.</div>
+    </div>
+    <span class="badge badge-pending">default</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">?</div>
+    <div>
+      <div class="label">Sorting</div>
+      <div class="value"><strong>Default: By token count descending</strong> — biggest consumers at top. Free space always last.</div>
+    </div>
+    <span class="badge badge-pending">default</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">?</div>
+    <div>
+      <div class="label">Persistence</div>
+      <div class="value"><strong>Default: In-memory only</strong> — the captured state is ephemeral, refreshed each turn. No need to persist to session entries. If <code>/context</code> is called before any <code>before_agent_start</code>, fall back to <code>ctx.getSystemPrompt()</code>.</div>
+    </div>
+    <span class="badge badge-pending">default</span>
+  </div>
+
+  <div class="decision">
+    <div class="num">?</div>
+    <div>
+      <div class="label">Estimation divisor</div>
+      <div class="value"><strong>Default: 3.5</strong> — a reasonable middle ground for mixed prose/code content. Can be tuned based on real-world comparison with API totals. The validation line ("estimated ≈ X / actual Y") makes divergence visible.</div>
+    </div>
+    <span class="badge badge-pending">default</span>
+  </div>
+</div>
+
+<script>
+function showScreen(name) {
+  document.querySelectorAll('.mockup-screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.querySelectorAll('.screen-nav button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>
