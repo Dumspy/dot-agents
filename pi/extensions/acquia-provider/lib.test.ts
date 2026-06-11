@@ -58,6 +58,7 @@ describe("buildProviderModels", () => {
 				},
 				contextWindow: 1_000_000,
 				maxTokens: 64_000,
+				compat: { cacheControlFormat: "anthropic" },
 			},
 		]);
 	});

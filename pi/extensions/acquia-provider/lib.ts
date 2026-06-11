@@ -242,6 +242,12 @@ export function buildProviderModel(
 	const supportsReasoning = parseBoolean(modelInfo?.supports_reasoning) ?? false;
 	const supportsVision = parseBoolean(modelInfo?.supports_vision) ?? false;
 
+	// Detect Claude-backed models by inspecting the litellm/key identity or the gateway model name.
+	// These are routed to Anthropic (directly or via Bedrock) and support Anthropic-style
+	// cache_control markers — pi must set compat.cacheControlFormat to actually send them.
+	const litellmName = modelInfo?.litellm_model_name ?? modelInfo?.key ?? "";
+	const isClaudeBacked = /claude/i.test(litellmName) || /claude/i.test(modelName);
+
 	return {
 		id: modelName,
 		name: prettyDisplayName(modelName),
@@ -255,6 +261,7 @@ export function buildProviderModel(
 		},
 		contextWindow: contextWindow ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
+		...(isClaudeBacked ? { compat: { cacheControlFormat: "anthropic" as const } } : {}),
 	};
 }
 
