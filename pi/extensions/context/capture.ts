@@ -143,6 +143,7 @@ export function buildBreakdown(
 				role: "custom",
 				tokens,
 				preview: text.slice(0, 200),
+				fullText: text,
 				timestamp: new Date(entry.timestamp).getTime(),
 			});
 			continue;
@@ -186,6 +187,7 @@ export function buildBreakdown(
 				role: msg.role === "user" ? "user" : "agent",
 				tokens,
 				preview: text.slice(0, 200),
+				fullText: text,
 				thinking: thinkingText || undefined,
 				thinkingTokens: thinkingTk > 0 ? thinkingTk : undefined,
 				timestamp: msg.timestamp ?? new Date(entry.timestamp).getTime(),

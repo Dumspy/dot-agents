@@ -32,6 +32,7 @@ export interface MessageInfo {
 	role: "user" | "agent" | "custom";
 	tokens: number;
 	preview: string;
+	fullText: string;
 	thinking?: string;
 	thinkingTokens?: number;
 	timestamp: number;

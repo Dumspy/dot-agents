@@ -507,7 +507,7 @@ export class ContextOverlay {
 		lines.push("");
 
 		if (!this.messagePreviewLines) {
-			let preview = msg.preview || "(empty message)";
+			let preview = msg.fullText || "(empty message)";
 			if (msg.thinking) {
 				preview = `${th.fg("thinkingText", "[thinking]\n")}${msg.thinking}\n\n${preview}`;
 			}
