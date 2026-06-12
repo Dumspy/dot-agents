@@ -12,13 +12,6 @@ import { formatTokens, formatPercentage } from "./estimate.ts";
 import { renderBar, padRight } from "./format.ts";
 
 const MAX_BAR_WIDTH = 36;
-const MAX_DISPLAYED_CALLS = 15;
-
-interface CallRow {
-	num: string;
-	args: string;
-	tokens: number;
-}
 
 export class ContextOverlay {
 	private screen: Screen = "main";
@@ -30,13 +23,12 @@ export class ContextOverlay {
 
 	// Navigation state
 	private mainIndex = 0;
-	private callsIndex = 0;
-	private messagesIndex = 0;
 
 	// Cache
 	private cachedLines?: string[];
 	private cachedWidth?: number;
 	private toolUsageList?: SelectList;
+	private toolCallsList?: SelectList;
 	private toolDefsList?: SelectList;
 	private messagesList?: SelectList;
 
@@ -65,8 +57,10 @@ export class ContextOverlay {
 			this.toolUsageList.handleInput(data);
 			this.invalidate();
 			this.tui.requestRender();
-		} else if (this.screen === "toolCalls") {
-			this.handleCallsInput(data);
+		} else if (this.screen === "toolCalls" && this.toolCallsList) {
+			this.toolCallsList.handleInput(data);
+			this.invalidate();
+			this.tui.requestRender();
 		} else if (this.screen === "messages" && this.messagesList) {
 			this.messagesList.handleInput(data);
 			this.invalidate();
@@ -108,6 +102,7 @@ export class ContextOverlay {
 		this.cachedLines = undefined;
 		this.cachedWidth = undefined;
 		this.toolUsageList?.invalidate();
+		this.toolCallsList?.invalidate();
 		this.messagesList?.invalidate();
 		this.toolDefsList?.invalidate();
 	}
@@ -130,7 +125,6 @@ export class ContextOverlay {
 				this.tui.requestRender();
 			} else if (cat?.id === "messages") {
 				this.screen = "messages";
-				this.messagesIndex = 0;
 				this.invalidate();
 				this.tui.requestRender();
 			} else if (cat?.id === "tools") {
@@ -141,47 +135,12 @@ export class ContextOverlay {
 		}
 	}
 
-	private handleCallsInput(data: string): void {
-		const calls = this.getSelectedToolCalls();
-		if (calls.length === 0) return;
-		if (matchesKey(data, Key.up) && this.callsIndex > 0) {
-			this.callsIndex--;
-			this.invalidate();
-			this.tui.requestRender();
-		} else if (matchesKey(data, Key.down) && this.callsIndex < calls.length - 1) {
-			this.callsIndex++;
-			this.invalidate();
-			this.tui.requestRender();
-		}
-	}
-
 	private getInteractiveCategories(): CategoryBreakdown[] {
 		return this.breakdown.categories.filter((c) => c.id !== "free");
 	}
 
-	private getSelectedToolCalls(): CallRow[] {
-		const tool = this.breakdown.toolUsage.find((t) => t.toolName === this.selectedTool);
-		if (!tool) return [];
-
-		const result: CallRow[] = [];
-		const displayed = Math.min(tool.calls.length, MAX_DISPLAYED_CALLS - 1);
-		for (let i = 0; i < displayed; i++) {
-			result.push({
-				num: `${i + 1}`,
-				args: tool.calls[i]!.args,
-				tokens: tool.calls[i]!.estimatedTokens,
-			});
-		}
-		if (tool.calls.length > MAX_DISPLAYED_CALLS - 1) {
-			const remaining = tool.calls.length - (MAX_DISPLAYED_CALLS - 1);
-			const remainingTokens = tool.calls.slice(MAX_DISPLAYED_CALLS - 1).reduce((sum, c) => sum + c.estimatedTokens, 0);
-			result.push({
-				num: "…",
-				args: `${remaining} more calls`,
-				tokens: remainingTokens,
-			});
-		}
-		return result;
+	private getSelectedTool() {
+		return this.breakdown.toolUsage.find((t) => t.toolName === this.selectedTool);
 	}
 
 	private buildContent(width: number): string[] {
@@ -299,7 +258,7 @@ export class ContextOverlay {
 				});
 				this.toolUsageList.onSelect = (item) => {
 					this.selectedTool = item.value;
-					this.callsIndex = 0;
+					this.toolCallsList = undefined;
 					this.screen = "toolCalls";
 					this.invalidate();
 					this.tui.requestRender();
@@ -325,24 +284,41 @@ export class ContextOverlay {
 
 	private buildToolCallsScreen(lines: string[], width: number): void {
 		const th = this.theme;
-		const tool = this.breakdown.toolUsage.find((t) => t.toolName === this.selectedTool);
-		const calls = this.getSelectedToolCalls();
+		const tool = this.getSelectedTool();
 
 		const title = tool ? `${tool.toolName}  ${tool.totalCalls} calls • ${formatTokens(tool.totalTokens)} tokens` : "Tool Calls";
 		lines.push(th.fg("accent", th.bold(title)));
 		lines.push("");
 
-		if (calls.length === 0) {
+		if (!tool || tool.calls.length === 0) {
 			lines.push(th.fg("muted", "No calls found"));
 		} else {
-			for (let i = 0; i < calls.length; i++) {
-				const call = calls[i];
-				const isSelected = i === this.callsIndex;
-				const num = isSelected ? th.fg("accent", "▶") : th.fg("dim", call.num);
-				const args = th.fg(isSelected ? "text" : "muted", truncateToWidth(`[${call.args}]`, Math.floor(width * 0.6)));
-				const tokens = th.fg("warning", formatTokens(call.tokens));
-				const line = `${num}  ${args}  ${tokens}`;
-				lines.push(truncateToWidth(line, width));
+			if (!this.toolCallsList) {
+				const items: SelectItem[] = tool.calls.map((call, index) => ({
+					value: call.toolCallId,
+					label: `${index + 1}  [${call.args}]`,
+					description: formatTokens(call.estimatedTokens),
+				}));
+
+				this.toolCallsList = new SelectList(items, Math.min(items.length, 10), {
+					selectedPrefix: (t) => th.fg("accent", t),
+					selectedText: (t) => th.fg("accent", t),
+					description: (t) => th.fg("warning", t),
+					scrollInfo: (t) => th.fg("dim", t),
+					noMatch: (t) => th.fg("warning", t),
+				});
+				this.toolCallsList.onSelect = () => {
+					// No further drill-down for tool calls
+				};
+				this.toolCallsList.onCancel = () => {
+					this.screen = "toolUsage";
+					this.invalidate();
+					this.tui.requestRender();
+				};
+			}
+
+			if (this.toolCallsList) {
+				lines.push(...this.toolCallsList.render(width));
 			}
 		}
 

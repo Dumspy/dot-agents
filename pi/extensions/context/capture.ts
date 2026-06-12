@@ -1,20 +1,6 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { calculateContextTokens, getLastAssistantUsage, type ExtensionAPI, type ExtensionCommandContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { CapturedState, ContextBreakdown, ToolUsageInfo, ToolCallInfo, ToolDefInfo, CategoryBreakdown } from "./types.ts";
 import { estimateTokens, estimateTokensFromJson } from "./estimate.ts";
-
-interface SessionEntry {
-	type: string;
-	message?: {
-		role?: string;
-		content?: unknown;
-		summary?: string;
-		toolName?: string;
-		toolCallId?: string;
-		details?: unknown;
-		isError?: boolean;
-	};
-	content?: unknown;
-}
 
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
 	Boolean(part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part && typeof (part as { text: unknown }).text === "string");
@@ -62,9 +48,6 @@ export function buildBreakdown(
 	const modelName = model ? `${model.provider}/${model.id}` : "unknown";
 	const contextWindow = model?.contextWindow ?? 200_000;
 
-	const usage = ctx.getContextUsage();
-	const actualTokens = usage?.tokens ?? 0;
-
 	// Fallback to getSystemPromptOptions if no captured state
 	const options = captured?.systemPromptOptions ?? ctx.getSystemPromptOptions?.() ?? { cwd: ctx.cwd };
 	const systemPrompt = captured?.systemPrompt ?? ctx.getSystemPrompt?.() ?? "";
@@ -110,9 +93,14 @@ export function buildBreakdown(
 
 	const branch = ctx.sessionManager.getBranch();
 
+	// Compute actual tokens from the last assistant message usage, or fall back to getContextUsage estimate
+	const usage = ctx.getContextUsage();
+	const lastAssistantUsage = getLastAssistantUsage(branch as SessionEntry[]);
+	const actualTokens = lastAssistantUsage ? calculateContextTokens(lastAssistantUsage) : (usage?.tokens ?? 0);
+
 	let branchTokens = 0;
 
-	for (const entry of branch as SessionEntry[]) {
+	for (const entry of branch) {
 		if (entry.type === "custom_message" && entry.content) {
 			// Extension-injected messages that participate in LLM context
 			const text = extractText(entry.content);
