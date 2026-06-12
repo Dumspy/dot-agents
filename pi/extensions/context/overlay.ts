@@ -3,13 +3,9 @@ import {
 	matchesKey,
 	Key,
 	SelectList,
-	Spacer,
-	Text,
 	truncateToWidth,
-	visibleWidth,
 	 type SelectItem,
 	 type TUI,
-	 type Component,
 } from "@earendil-works/pi-tui";
 import type { ContextBreakdown, Screen, CategoryBreakdown } from "./types.ts";
 import { formatTokens, formatPercentage } from "./estimate.ts";
@@ -65,11 +61,13 @@ export class ContextOverlay {
 			this.handleMainInput(data);
 		} else if (this.screen === "toolUsage" && this.toolUsageList) {
 			this.toolUsageList.handleInput(data);
+			this.invalidate();
 			this.tui.requestRender();
 		} else if (this.screen === "toolCalls") {
 			this.handleCallsInput(data);
 		} else if (this.screen === "toolDefs" && this.toolDefsList) {
 			this.toolDefsList.handleInput(data);
+			this.invalidate();
 			this.tui.requestRender();
 		}
 	}
