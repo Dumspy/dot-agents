@@ -1,21 +1,21 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import {
-	Container,
 	matchesKey,
 	Key,
 	SelectList,
 	Spacer,
 	Text,
 	truncateToWidth,
+	visibleWidth,
 	 type SelectItem,
 	 type TUI,
+	 type Component,
 } from "@earendil-works/pi-tui";
 import type { ContextBreakdown, Screen, CategoryBreakdown } from "./types.ts";
 import { formatTokens, formatPercentage } from "./estimate.ts";
 import { renderBar, padRight } from "./format.ts";
 
-const MAX_BAR_WIDTH = 40;
+const MAX_BAR_WIDTH = 36;
 const MAX_DISPLAYED_CALLS = 15;
 
 interface CallRow {
@@ -78,9 +78,26 @@ export class ContextOverlay {
 		if (this.cachedLines && this.cachedWidth === width) {
 			return this.cachedLines;
 		}
-		this.cachedLines = this.buildLines(width);
+		const innerWidth = Math.max(1, width - 2);
+		const content = this.buildContent(innerWidth);
+		const th = this.theme;
+
+		const lines: string[] = [];
+		// Top border
+		lines.push(th.fg("border", `┌${"─".repeat(innerWidth)}┐`));
+
+		// Content rows with side borders
+		for (const line of content) {
+			const padded = padRight(truncateToWidth(line, innerWidth), innerWidth);
+			lines.push(th.fg("border", "│") + padded + th.fg("border", "│"));
+		}
+
+		// Bottom border
+		lines.push(th.fg("border", `└${"─".repeat(innerWidth)}┘`));
+
+		this.cachedLines = lines;
 		this.cachedWidth = width;
-		return this.cachedLines;
+		return lines;
 	}
 
 	invalidate(): void {
@@ -157,36 +174,29 @@ export class ContextOverlay {
 		return result;
 	}
 
-	private buildLines(width: number): string[] {
-		const container = new Container();
-		const th = this.theme;
-
-		// Top border
-		container.addChild(new DynamicBorder((s: string) => th.fg("border", s)));
+	private buildContent(width: number): string[] {
+		const lines: string[] = [];
 
 		if (this.screen === "main") {
-			this.buildMainScreen(container, width);
+			this.buildMainScreen(lines, width);
 		} else if (this.screen === "toolUsage") {
-			this.buildToolUsageScreen(container, width);
+			this.buildToolUsageScreen(lines, width);
 		} else if (this.screen === "toolCalls") {
-			this.buildToolCallsScreen(container, width);
+			this.buildToolCallsScreen(lines, width);
 		} else if (this.screen === "toolDefs") {
-			this.buildToolDefsScreen(container, width);
+			this.buildToolDefsScreen(lines, width);
 		}
 
-		// Bottom border
-		container.addChild(new DynamicBorder((s: string) => th.fg("border", s)));
-
-		return container.render(width);
+		return lines;
 	}
 
-	private buildMainScreen(container: Container, width: number): void {
+	private buildMainScreen(lines: string[], width: number): void {
 		const th = this.theme;
 		const interactive = this.getInteractiveCategories();
 		const freeCat = this.breakdown.categories.find((c) => c.id === "free");
 
 		// Title
-		container.addChild(new Text(th.fg("accent", th.bold("Context Usage")), 1, 0));
+		lines.push(th.fg("accent", th.bold("Context Usage")));
 
 		// Summary line
 		const usage = `${formatTokens(this.breakdown.actualTokens)} / ${formatTokens(this.breakdown.contextWindow)}`;
@@ -194,31 +204,31 @@ export class ContextOverlay {
 			? ((this.breakdown.actualTokens / this.breakdown.contextWindow) * 100).toFixed(1) + "%"
 			: "0%";
 		const summary = `${this.breakdown.modelName}  ${usage} (${usagePct})`;
-		container.addChild(new Text(th.fg("muted", summary), 1, 0));
-		container.addChild(new Spacer(1));
+		lines.push(th.fg("muted", summary));
+		lines.push("");
 
 		// Categories
 		for (let i = 0; i < interactive.length; i++) {
 			const cat = interactive[i];
 			const isSelected = i === this.mainIndex;
-			this.renderCategoryRow(container, cat, isSelected, width);
+			this.renderCategoryRow(lines, cat, isSelected, width);
 		}
 
 		// Free space
 		if (freeCat) {
-			container.addChild(new Spacer(1));
-			this.renderCategoryRow(container, freeCat, false, width);
+			lines.push("");
+			this.renderCategoryRow(lines, freeCat, false, width);
 		}
 
 		// Footer
-		container.addChild(new Spacer(1));
+		lines.push("");
 		const est = formatTokens(this.breakdown.estimatedTokens);
 		const act = formatTokens(this.breakdown.actualTokens);
 		const help = `↑↓ navigate • enter drill-down • esc close    estimated ≈ ${est} / actual ${act}`;
-		container.addChild(new Text(th.fg("dim", help), 1, 0));
+		lines.push(th.fg("dim", help));
 	}
 
-	private renderCategoryRow(container: Container, cat: CategoryBreakdown, isSelected: boolean, width: number): void {
+	private renderCategoryRow(lines: string[], cat: CategoryBreakdown, isSelected: boolean, width: number): void {
 		const th = this.theme;
 		const barWidth = Math.min(MAX_BAR_WIDTH, Math.floor(width * 0.5));
 		const labelWidth = Math.max(10, width - barWidth - 4);
@@ -233,22 +243,22 @@ export class ContextOverlay {
 		const rightPadded = padRight(rightPart, barWidth + 2);
 
 		const line = `${namePart} ${rightPadded}`;
-		container.addChild(new Text(truncateToWidth(line, width), 0, 0));
+		lines.push(truncateToWidth(line, width));
 
 		// Bar
 		const bar = renderBar(barWidth, cat.percentage, (s) => th.fg(cat.color, s), (s) => th.fg("dim", s));
 		const barLine = `  ${bar}`;
-		container.addChild(new Text(truncateToWidth(barLine, width), 0, 0));
+		lines.push(truncateToWidth(barLine, width));
 	}
 
-	private buildToolUsageScreen(container: Container, width: number): void {
+	private buildToolUsageScreen(lines: string[], width: number): void {
 		const th = this.theme;
 		const totalTokens = this.breakdown.toolUsage.reduce((sum, t) => sum + t.totalTokens, 0);
 		const totalCalls = this.breakdown.toolUsage.reduce((sum, t) => sum + t.totalCalls, 0);
 
-		container.addChild(new Text(th.fg("accent", th.bold("Tool Usage")), 1, 0));
-		container.addChild(new Text(th.fg("muted", `${formatTokens(totalTokens)} tokens across ${totalCalls} calls`), 1, 0));
-		container.addChild(new Spacer(1));
+		lines.push(th.fg("accent", th.bold("Tool Usage")));
+		lines.push(th.fg("muted", `${formatTokens(totalTokens)} tokens across ${totalCalls} calls`));
+		lines.push("");
 
 		if (!this.toolUsageList) {
 			const items: SelectItem[] = this.breakdown.toolUsage.map((tool) => {
@@ -284,26 +294,27 @@ export class ContextOverlay {
 		}
 
 		if (this.toolUsageList) {
-			container.addChild(this.toolUsageList);
+			// SelectList.render() returns string[]; append them directly
+			lines.push(...this.toolUsageList.render(width));
 		} else {
-			container.addChild(new Text(th.fg("muted", "No tool usage yet"), 1, 0));
+			lines.push(th.fg("muted", "No tool usage yet"));
 		}
 
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(th.fg("dim", "↑↓ navigate • enter show calls • esc back"), 1, 0));
+		lines.push("");
+		lines.push(th.fg("dim", "↑↓ navigate • enter show calls • esc back"));
 	}
 
-	private buildToolCallsScreen(container: Container, width: number): void {
+	private buildToolCallsScreen(lines: string[], width: number): void {
 		const th = this.theme;
 		const tool = this.breakdown.toolUsage.find((t) => t.toolName === this.selectedTool);
 		const calls = this.getSelectedToolCalls();
 
 		const title = tool ? `${tool.toolName}  ${tool.totalCalls} calls • ${formatTokens(tool.totalTokens)} tokens` : "Tool Calls";
-		container.addChild(new Text(th.fg("accent", th.bold(title)), 1, 0));
-		container.addChild(new Spacer(1));
+		lines.push(th.fg("accent", th.bold(title)));
+		lines.push("");
 
 		if (calls.length === 0) {
-			container.addChild(new Text(th.fg("muted", "No calls found"), 1, 0));
+			lines.push(th.fg("muted", "No calls found"));
 		} else {
 			for (let i = 0; i < calls.length; i++) {
 				const call = calls[i];
@@ -312,21 +323,21 @@ export class ContextOverlay {
 				const args = th.fg(isSelected ? "text" : "muted", truncateToWidth(`[${call.args}]`, Math.floor(width * 0.6)));
 				const tokens = th.fg("warning", formatTokens(call.tokens));
 				const line = `${num}  ${args}  ${tokens}`;
-				container.addChild(new Text(truncateToWidth(line, width), 0, 0));
+				lines.push(truncateToWidth(line, width));
 			}
 		}
 
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(th.fg("dim", "↑↓ navigate • esc back to tools"), 1, 0));
+		lines.push("");
+		lines.push(th.fg("dim", "↑↓ navigate • esc back to tools"));
 	}
 
-	private buildToolDefsScreen(container: Container, width: number): void {
+	private buildToolDefsScreen(lines: string[], width: number): void {
 		const th = this.theme;
 		const totalTokens = this.breakdown.toolDefinitions.reduce((sum, t) => sum + t.schemaTokens, 0);
 
-		container.addChild(new Text(th.fg("accent", th.bold("Tool Definitions")), 1, 0));
-		container.addChild(new Text(th.fg("muted", `${formatTokens(totalTokens)} tokens • schema cost per tool`), 1, 0));
-		container.addChild(new Spacer(1));
+		lines.push(th.fg("accent", th.bold("Tool Definitions")));
+		lines.push(th.fg("muted", `${formatTokens(totalTokens)} tokens • schema cost per tool`));
+		lines.push("");
 
 		if (!this.toolDefsList) {
 			const items: SelectItem[] = this.breakdown.toolDefinitions.map((tool) => {
@@ -358,12 +369,12 @@ export class ContextOverlay {
 		}
 
 		if (this.toolDefsList) {
-			container.addChild(this.toolDefsList);
+			lines.push(...this.toolDefsList.render(width));
 		} else {
-			container.addChild(new Text(th.fg("muted", "No tool definitions"), 1, 0));
+			lines.push(th.fg("muted", "No tool definitions"));
 		}
 
-		container.addChild(new Spacer(1));
-		container.addChild(new Text(th.fg("dim", "↑↓ navigate • esc back to overview"), 1, 0));
+		lines.push("");
+		lines.push(th.fg("dim", "↑↓ navigate • esc back to overview"));
 	}
 }
