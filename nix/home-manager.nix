@@ -44,11 +44,16 @@
   piDir = ../pi;
   piExtensionsDir = piDir + "/extensions";
   hasPiExtensions = builtins.pathExists piExtensionsDir;
-  piExtensionFiles =
+  piExtensionEntries =
     if hasPiExtensions
-    then builtins.attrNames (builtins.readDir piExtensionsDir)
-    else [];
-  piExtensionNames = map (f: lib.removeSuffix ".ts" f) (lib.filter (f: lib.hasSuffix ".ts" f) piExtensionFiles);
+    then builtins.readDir piExtensionsDir
+    else {};
+  piExtensionFiles = builtins.attrNames piExtensionEntries;
+  piExtensionNames = let
+    fileNames = map (f: lib.removeSuffix ".ts" f) (lib.filter (f: lib.hasSuffix ".ts" f) piExtensionFiles);
+    dirNames = lib.attrNames (lib.filterAttrs (n: v: v == "directory") piExtensionEntries);
+  in
+    fileNames ++ dirNames;
   enabledPiExtensions =
     if cfg.pi.extensions == null
     then piExtensionNames
