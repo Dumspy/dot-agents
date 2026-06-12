@@ -99,6 +99,8 @@ export function buildBreakdown(
 
 	// 5. Messages + tool usage + images + compaction
 	let messagesTokens = 0;
+	let userTokens = 0;
+	let agentTokens = 0;
 	let imageTokens = 0;
 	let imageCount = 0;
 	let compactionTokens = 0;
@@ -113,7 +115,10 @@ export function buildBreakdown(
 	for (const entry of branch as SessionEntry[]) {
 		if (entry.type === "custom_message" && entry.content) {
 			// Extension-injected messages that participate in LLM context
-			messagesTokens += estimateTokens(extractText(entry.content));
+			const text = extractText(entry.content);
+			const tokens = estimateTokens(text);
+			messagesTokens += tokens;
+			agentTokens += tokens; // Custom messages are from the agent side
 			imageCount += extractImageCount(entry.content);
 			imageTokens += estimateImageTokens(entry.content);
 			continue;
@@ -136,7 +141,14 @@ export function buildBreakdown(
 
 		// User messages, assistant messages, custom messages
 		if (msg.role === "user" || msg.role === "custom" || msg.role === "assistant") {
-			messagesTokens += estimateTokens(extractText(msg.content));
+			const text = extractText(msg.content);
+			const tokens = estimateTokens(text);
+			messagesTokens += tokens;
+			if (msg.role === "user") {
+				userTokens += tokens;
+			} else {
+				agentTokens += tokens;
+			}
 			imageCount += extractImageCount(msg.content);
 			imageTokens += estimateImageTokens(msg.content);
 		}
@@ -235,6 +247,7 @@ export function buildBreakdown(
 		categories: nonEmpty,
 		toolUsage,
 		toolDefinitions: toolDefinitions.sort((a, b) => b.schemaTokens - a.schemaTokens),
+		messageBreakdown: { userTokens, agentTokens },
 		compactionTokens,
 		imageCount,
 		imageTokens,

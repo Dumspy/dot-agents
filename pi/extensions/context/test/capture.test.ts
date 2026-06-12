@@ -181,6 +181,8 @@ describe("buildBreakdown", () => {
 		const messagesCat = result.categories.find((c) => c.id === "messages");
 		expect(messagesCat).toBeDefined();
 		expect(messagesCat!.tokens).toBeGreaterThan(0);
+		expect(result.messageBreakdown.userTokens).toBeGreaterThan(0);
+		expect(result.messageBreakdown.agentTokens).toBeGreaterThan(0);
 	});
 
 	it("counts tool usage from assistant tool calls and results", () => {

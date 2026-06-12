@@ -27,6 +27,11 @@ export interface ToolDefInfo {
 	schemaTokens: number;
 }
 
+export interface MessageBreakdown {
+	userTokens: number;
+	agentTokens: number;
+}
+
 export interface ContextBreakdown {
 	modelName: string;
 	contextWindow: number;
@@ -35,6 +40,7 @@ export interface ContextBreakdown {
 	categories: CategoryBreakdown[];
 	toolUsage: ToolUsageInfo[];
 	toolDefinitions: ToolDefInfo[];
+	messageBreakdown: MessageBreakdown;
 	compactionTokens: number;
 	imageCount: number;
 	imageTokens: number;
@@ -45,4 +51,4 @@ export interface CapturedState {
 	systemPromptOptions: BuildSystemPromptOptions;
 }
 
-export type Screen = "main" | "toolUsage" | "toolCalls" | "toolDefs";
+export type Screen = "main" | "toolUsage" | "toolCalls" | "toolDefs" | "messages";

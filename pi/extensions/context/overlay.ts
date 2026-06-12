@@ -31,12 +31,14 @@ export class ContextOverlay {
 	// Navigation state
 	private mainIndex = 0;
 	private callsIndex = 0;
+	private messagesIndex = 0;
 
 	// Cache
 	private cachedLines?: string[];
 	private cachedWidth?: number;
 	private toolUsageList?: SelectList;
 	private toolDefsList?: SelectList;
+	private messagesList?: SelectList;
 
 	constructor(breakdown: ContextBreakdown, theme: Theme, tui: TUI, done: () => void) {
 		this.breakdown = breakdown;
@@ -65,6 +67,10 @@ export class ContextOverlay {
 			this.tui.requestRender();
 		} else if (this.screen === "toolCalls") {
 			this.handleCallsInput(data);
+		} else if (this.screen === "messages" && this.messagesList) {
+			this.messagesList.handleInput(data);
+			this.invalidate();
+			this.tui.requestRender();
 		} else if (this.screen === "toolDefs" && this.toolDefsList) {
 			this.toolDefsList.handleInput(data);
 			this.invalidate();
@@ -102,6 +108,7 @@ export class ContextOverlay {
 		this.cachedLines = undefined;
 		this.cachedWidth = undefined;
 		this.toolUsageList?.invalidate();
+		this.messagesList?.invalidate();
 		this.toolDefsList?.invalidate();
 	}
 
@@ -119,6 +126,11 @@ export class ContextOverlay {
 			const cat = interactive[this.mainIndex];
 			if (cat?.id === "tooluse") {
 				this.screen = "toolUsage";
+				this.invalidate();
+				this.tui.requestRender();
+			} else if (cat?.id === "messages") {
+				this.screen = "messages";
+				this.messagesIndex = 0;
 				this.invalidate();
 				this.tui.requestRender();
 			} else if (cat?.id === "tools") {
@@ -181,6 +193,8 @@ export class ContextOverlay {
 			this.buildToolUsageScreen(lines, width);
 		} else if (this.screen === "toolCalls") {
 			this.buildToolCallsScreen(lines, width);
+		} else if (this.screen === "messages") {
+			this.buildMessagesScreen(lines, width);
 		} else if (this.screen === "toolDefs") {
 			this.buildToolDefsScreen(lines, width);
 		}
@@ -259,14 +273,21 @@ export class ContextOverlay {
 		lines.push("");
 
 		if (!this.toolUsageList) {
-			const items: SelectItem[] = this.breakdown.toolUsage.map((tool) => {
-				const pct = totalTokens > 0 ? ((tool.totalTokens / totalTokens) * 100).toFixed(0) + "%" : "0%";
-				return {
-					value: tool.toolName,
-					label: tool.toolName,
-					description: `${formatTokens(tool.totalTokens)}  ${pct}  ${tool.totalCalls} calls`,
-				};
-			});
+			const items: SelectItem[] = this.breakdown.toolUsage
+				.map((tool) => {
+					const pct = totalTokens > 0 ? ((tool.totalTokens / totalTokens) * 100).toFixed(0) + "%" : "0%";
+					return {
+						value: tool.toolName,
+						label: tool.toolName,
+						description: `${formatTokens(tool.totalTokens)}  ${pct}  ${tool.totalCalls} calls`,
+					};
+				})
+				.sort((a, b) => {
+					// Defensive: sort by totalTokens extracted from description
+					const aTokens = this.breakdown.toolUsage.find((t) => t.toolName === a.value)?.totalTokens ?? 0;
+					const bTokens = this.breakdown.toolUsage.find((t) => t.toolName === b.value)?.totalTokens ?? 0;
+					return bTokens - aTokens;
+				});
 
 			if (items.length > 0) {
 				this.toolUsageList = new SelectList(items, Math.min(items.length, 10), {
@@ -329,6 +350,53 @@ export class ContextOverlay {
 		lines.push(th.fg("dim", "↑↓ navigate • esc back to tools"));
 	}
 
+	private buildMessagesScreen(lines: string[], width: number): void {
+		const th = this.theme;
+		const totalMessages = this.breakdown.messageBreakdown.userTokens + this.breakdown.messageBreakdown.agentTokens;
+
+		lines.push(th.fg("accent", th.bold("Messages")));
+		lines.push(th.fg("muted", `${formatTokens(totalMessages)} tokens total`));
+		lines.push("");
+
+		if (!this.messagesList) {
+			const items: SelectItem[] = [
+				{
+					value: "user",
+					label: "User",
+					description: `${formatTokens(this.breakdown.messageBreakdown.userTokens)}  ${formatPercentage(totalMessages > 0 ? (this.breakdown.messageBreakdown.userTokens / totalMessages) * 100 : 0)}`,
+				},
+				{
+					value: "agent",
+					label: "Agent",
+					description: `${formatTokens(this.breakdown.messageBreakdown.agentTokens)}  ${formatPercentage(totalMessages > 0 ? (this.breakdown.messageBreakdown.agentTokens / totalMessages) * 100 : 0)}`,
+				},
+			];
+
+			this.messagesList = new SelectList(items, items.length, {
+				selectedPrefix: (t) => th.fg("accent", t),
+				selectedText: (t) => th.fg("accent", t),
+				description: (t) => th.fg("muted", t),
+				scrollInfo: (t) => th.fg("dim", t),
+				noMatch: (t) => th.fg("warning", t),
+			});
+			this.messagesList.onSelect = () => {
+				// No further drill-down for messages
+			};
+			this.messagesList.onCancel = () => {
+				this.screen = "main";
+				this.invalidate();
+				this.tui.requestRender();
+			};
+		}
+
+		if (this.messagesList) {
+			lines.push(...this.messagesList.render(width));
+		}
+
+		lines.push("");
+		lines.push(th.fg("dim", "↑↓ navigate • esc back to overview"));
+	}
+
 	private buildToolDefsScreen(lines: string[], width: number): void {
 		const th = this.theme;
 		const totalTokens = this.breakdown.toolDefinitions.reduce((sum, t) => sum + t.schemaTokens, 0);
@@ -338,14 +406,21 @@ export class ContextOverlay {
 		lines.push("");
 
 		if (!this.toolDefsList) {
-			const items: SelectItem[] = this.breakdown.toolDefinitions.map((tool) => {
-				const pct = totalTokens > 0 ? ((tool.schemaTokens / totalTokens) * 100).toFixed(0) + "%" : "0%";
-				return {
-					value: tool.toolName,
-					label: tool.toolName,
-					description: `${formatTokens(tool.schemaTokens)}  ${pct}`,
-				};
-			});
+			const items: SelectItem[] = this.breakdown.toolDefinitions
+				.map((tool) => {
+					const pct = totalTokens > 0 ? ((tool.schemaTokens / totalTokens) * 100).toFixed(0) + "%" : "0%";
+					return {
+						value: tool.toolName,
+						label: tool.toolName,
+						description: `${formatTokens(tool.schemaTokens)}  ${pct}`,
+					};
+				})
+				.sort((a, b) => {
+					// Defensive: sort by schemaTokens
+					const aTokens = this.breakdown.toolDefinitions.find((t) => t.toolName === a.value)?.schemaTokens ?? 0;
+					const bTokens = this.breakdown.toolDefinitions.find((t) => t.toolName === b.value)?.schemaTokens ?? 0;
+					return bTokens - aTokens;
+				});
 
 			if (items.length > 0) {
 				this.toolDefsList = new SelectList(items, Math.min(items.length, 10), {
