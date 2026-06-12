@@ -98,7 +98,8 @@ export class ContextOverlay {
 				this.tui.requestRender();
 			} else if (matchesKey(data, Key.down)) {
 				if (this.messagePreviewLines) {
-					this.messagePreviewScroll = Math.max(0, Math.min(this.messagePreviewLines.length - 1, this.messagePreviewScroll + 1));
+					const maxScroll = Math.max(0, this.messagePreviewLines.length - 15);
+					this.messagePreviewScroll = Math.min(maxScroll, this.messagePreviewScroll + 1);
 				}
 				this.invalidate();
 				this.tui.requestRender();
@@ -371,10 +372,14 @@ export class ContextOverlay {
 
 	private buildMessagesScreen(lines: string[], width: number): void {
 		const th = this.theme;
-		const totalMessages = this.breakdown.messageBreakdown.userTokens + this.breakdown.messageBreakdown.agentTokens;
+		const mb = this.breakdown.messageBreakdown;
+		const totalMessages = mb.userTokens + mb.agentTokens;
 
 		lines.push(th.fg("accent", th.bold("Messages")));
 		lines.push(th.fg("muted", `${formatTokens(totalMessages)} tokens total`));
+		if (mb.thinkingTokens > 0) {
+			lines.push(th.fg("muted", `${formatTokens(mb.thinkingTokens)} thinking`));
+		}
 		lines.push("");
 
 		if (!this.messagesList) {
@@ -382,12 +387,12 @@ export class ContextOverlay {
 				{
 					value: "user",
 					label: "User",
-					description: `${formatTokens(this.breakdown.messageBreakdown.userTokens)}  ${formatPercentage(totalMessages > 0 ? (this.breakdown.messageBreakdown.userTokens / totalMessages) * 100 : 0)}`,
+					description: `${formatTokens(mb.userTokens)}  ${formatPercentage(totalMessages > 0 ? (mb.userTokens / totalMessages) * 100 : 0)}`,
 				},
 				{
 					value: "agent",
 					label: "Agent",
-					description: `${formatTokens(this.breakdown.messageBreakdown.agentTokens)}  ${formatPercentage(totalMessages > 0 ? (this.breakdown.messageBreakdown.agentTokens / totalMessages) * 100 : 0)}`,
+					description: `${formatTokens(mb.agentTokens)}  ${formatPercentage(totalMessages > 0 ? (mb.agentTokens / totalMessages) * 100 : 0)}`,
 				},
 			];
 
@@ -498,11 +503,14 @@ export class ContextOverlay {
 		}
 
 		lines.push(th.fg("accent", th.bold(`${msg.role === "user" ? "User" : "Agent"} Message`)));
-		lines.push(th.fg("muted", `${formatTokens(msg.tokens)} tokens • entry ${msg.entryId}`));
+		lines.push(th.fg("muted", `${formatTokens(msg.tokens)} tokens${msg.thinkingTokens ? ` • ${formatTokens(msg.thinkingTokens)} thinking` : ""} • entry ${msg.entryId}`));
 		lines.push("");
 
 		if (!this.messagePreviewLines) {
-			const preview = msg.preview || "(empty message)";
+			let preview = msg.preview || "(empty message)";
+			if (msg.thinking) {
+				preview = `${th.fg("thinkingText", "[thinking]\n")}${msg.thinking}\n\n${preview}`;
+			}
 			this.messagePreviewLines = wrapTextWithAnsi(preview, width);
 		}
 

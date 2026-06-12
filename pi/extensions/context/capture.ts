@@ -1,4 +1,4 @@
-import { calculateContextTokens, getLastAssistantUsage, type ExtensionAPI, type ExtensionCommandContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { calculateContextTokens, getLastAssistantUsage, getLatestCompactionEntry, type ExtensionAPI, type ExtensionCommandContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { CapturedState, ContextBreakdown, ToolUsageInfo, ToolCallInfo, ToolDefInfo, CategoryBreakdown, MessageInfo } from "./types.ts";
 import { estimateTokens, estimateTokensFromJson } from "./estimate.ts";
 
@@ -11,10 +11,18 @@ const isImagePart = (part: unknown): part is { type: "image"; data: string } =>
 const isToolCallPart = (part: unknown): part is { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> } =>
 	Boolean(part && typeof part === "object" && "type" in part && part.type === "toolCall" && "name" in part && "arguments" in part);
 
+const isThinkingPart = (part: unknown): part is { type: "thinking"; thinking: string } =>
+	Boolean(part && typeof part === "object" && "type" in part && part.type === "thinking" && "thinking" in part && typeof (part as { thinking: unknown }).thinking === "string");
+
 const extractText = (content: unknown): string => {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
 	return content.filter(isTextPart).map((p) => p.text).join("\n");
+};
+
+const extractThinking = (content: unknown): string => {
+	if (!Array.isArray(content)) return "";
+	return content.filter(isThinkingPart).map((p) => p.thinking).join("\n");
 };
 
 const extractImageCount = (content: unknown): number => {
@@ -80,10 +88,11 @@ export function buildBreakdown(
 		contextFilesTokens += estimateTokens(file.content);
 	}
 
-	// 5. Messages + tool usage + images + compaction
+	// 5. Messages + tool usage + images + compaction + thinking
 	let messagesTokens = 0;
 	let userTokens = 0;
 	let agentTokens = 0;
+	let thinkingTokens = 0;
 	let imageTokens = 0;
 	let imageCount = 0;
 	let compactionTokens = 0;
@@ -99,9 +108,28 @@ export function buildBreakdown(
 	const lastAssistantUsage = getLastAssistantUsage(branch as SessionEntry[]);
 	const actualTokens = lastAssistantUsage ? calculateContextTokens(lastAssistantUsage) : (usage?.tokens ?? 0);
 
+	// Respect compaction: find the most recent compaction and skip entries before firstKeptEntryId
+	const latestCompaction = getLatestCompactionEntry(branch);
+	const firstKeptId = latestCompaction?.firstKeptEntryId;
+	let startIndex = 0;
+	if (firstKeptId) {
+		const idx = branch.findIndex((e) => e.id === firstKeptId);
+		if (idx >= 0) startIndex = idx;
+	}
+
 	let branchTokens = 0;
 
-	for (const entry of branch) {
+	for (let i = startIndex; i < branch.length; i++) {
+		const entry = branch[i]!;
+
+		// Compaction entry — count its summary and skip (it's not a message)
+		if (entry.type === "compaction") {
+			if (typeof entry.summary === "string") {
+				compactionTokens += estimateTokens(entry.summary);
+			}
+			continue;
+		}
+
 		if (entry.type === "custom_message" && entry.content) {
 			// Extension-injected messages that participate in LLM context
 			const text = extractText(entry.content);
@@ -123,7 +151,7 @@ export function buildBreakdown(
 		if (entry.type !== "message" || !entry.message) continue;
 		const msg = entry.message;
 
-		// Compaction summary
+		// Compaction summary (legacy / alternate format)
 		if (msg.role === "compactionSummary" && typeof msg.summary === "string") {
 			compactionTokens += estimateTokens(msg.summary);
 			continue;
@@ -147,11 +175,19 @@ export function buildBreakdown(
 			}
 			imageCount += extractImageCount(msg.content);
 			imageTokens += estimateImageTokens(msg.content);
+			const thinkingText = msg.role === "assistant" ? extractThinking(msg.content) : "";
+			const thinkingTk = estimateTokens(thinkingText);
+			thinkingTokens += thinkingTk;
+			if (msg.role === "assistant") {
+				agentTokens += thinkingTk;
+			}
 			messages.push({
 				entryId: entry.id,
 				role: msg.role === "user" ? "user" : "agent",
 				tokens,
 				preview: text.slice(0, 200),
+				thinking: thinkingText || undefined,
+				thinkingTokens: thinkingTk > 0 ? thinkingTk : undefined,
 				timestamp: msg.timestamp ?? new Date(entry.timestamp).getTime(),
 			});
 		}
@@ -249,7 +285,7 @@ export function buildBreakdown(
 		categories: nonEmpty,
 		toolUsage,
 		toolDefinitions: toolDefinitions.sort((a, b) => b.schemaTokens - a.schemaTokens),
-		messageBreakdown: { userTokens, agentTokens },
+		messageBreakdown: { userTokens, agentTokens, thinkingTokens },
 		messages: messages.sort((a, b) => b.tokens - a.tokens),
 		compactionTokens,
 		imageCount,

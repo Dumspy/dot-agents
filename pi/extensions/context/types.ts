@@ -32,12 +32,15 @@ export interface MessageInfo {
 	role: "user" | "agent" | "custom";
 	tokens: number;
 	preview: string;
+	thinking?: string;
+	thinkingTokens?: number;
 	timestamp: number;
 }
 
 export interface MessageBreakdown {
 	userTokens: number;
 	agentTokens: number;
+	thinkingTokens: number;
 }
 
 export interface ContextBreakdown {

@@ -503,4 +503,117 @@ describe("buildBreakdown", () => {
 		expect(result.messages[1]!.entryId).toBe("entry1");
 		expect(result.messages[0]!.tokens).toBeGreaterThan(result.messages[1]!.tokens);
 	});
+
+	it("respects compaction entries and skips messages before firstKeptEntryId", () => {
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					id: "old1",
+					type: "message",
+					message: {
+						role: "user",
+						content: "Old compacted message. " + "a".repeat(500),
+					},
+				},
+				{
+					id: "keep1",
+					type: "message",
+					message: {
+						role: "user",
+						content: "Kept message. " + "b".repeat(100),
+					},
+				},
+				{
+					id: "compact1",
+					type: "compaction",
+					summary: "Previous conversation was about testing. " + "c".repeat(100),
+					firstKeptEntryId: "keep1",
+					tokensBefore: 1000,
+				},
+				{
+					id: "new1",
+					type: "message",
+					message: {
+						role: "user",
+						content: "New message after compaction.",
+					},
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		// The old compacted message should NOT be counted
+		expect(result.messages.find((m) => m.entryId === "old1")).toBeUndefined();
+
+		// The kept message should be counted
+		expect(result.messages.find((m) => m.entryId === "keep1")).toBeDefined();
+
+		// The new message should be counted
+		expect(result.messages.find((m) => m.entryId === "new1")).toBeDefined();
+
+		// The compaction summary should be counted
+		expect(result.compactionTokens).toBeGreaterThan(0);
+		const compactionCat = result.categories.find((c) => c.id === "compaction");
+		expect(compactionCat).toBeDefined();
+		expect(compactionCat!.tokens).toBeGreaterThan(0);
+	});
+
+	it("counts compaction summary from compaction entry type", () => {
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					id: "keep1",
+					type: "message",
+					message: {
+						role: "user",
+						content: "Hello",
+					},
+				},
+				{
+					id: "compact1",
+					type: "compaction",
+					summary: "Compacted summary text. " + "z".repeat(100),
+					firstKeptEntryId: "keep1",
+					tokensBefore: 500,
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		expect(result.compactionTokens).toBeGreaterThan(0);
+		expect(result.categories.find((c) => c.id === "compaction")).toBeDefined();
+	});
+
+	it("extracts thinking content from assistant messages", () => {
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					id: "entry1",
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{ type: "thinking", thinking: "Let me think about this. " + "t".repeat(100) },
+							{ type: "text", text: "Here is my answer. " + "a".repeat(50) },
+						],
+					},
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		expect(result.messageBreakdown.thinkingTokens).toBeGreaterThan(0);
+		const agentMsg = result.messages.find((m) => m.role === "agent");
+		expect(agentMsg).toBeDefined();
+		expect(agentMsg!.thinking).toBeDefined();
+		expect(agentMsg!.thinkingTokens).toBeGreaterThan(0);
+		// Thinking should be counted in agent tokens too
+		expect(result.messageBreakdown.agentTokens).toBeGreaterThan(agentMsg!.thinkingTokens);
+	});
 });
