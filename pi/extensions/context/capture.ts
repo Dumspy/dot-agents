@@ -42,7 +42,7 @@ const estimateImageTokens = (content: unknown): number => {
 	return total;
 };
 
-const truncateArgs = (args: string, maxLen = 60): string => {
+const truncateArgs = (args: string, maxLen = 100): string => {
 	if (args.length <= maxLen) return args;
 	return args.slice(0, maxLen - 1) + "…";
 };
@@ -203,6 +203,7 @@ export function buildBreakdown(
 					toolCallsMap.set(part.id, {
 						toolCallId: part.id,
 						args: truncateArgs(argsStr),
+						fullArgs: argsStr,
 						estimatedTokens: callTokens,
 					});
 					// Add to tool usage map

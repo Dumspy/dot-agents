@@ -227,6 +227,40 @@ describe("buildBreakdown", () => {
 		expect(result.toolUsage[0]?.totalCalls).toBe(1);
 	});
 
+	it("preserves full tool call args for long argument lists", () => {
+		const longCommand = "echo " + "x".repeat(300);
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "call_long",
+								name: "bash",
+								arguments: { command: longCommand },
+							},
+						],
+					},
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		const call = result.toolUsage[0]?.calls[0];
+		expect(call).toBeDefined();
+		// args is the truncated label-friendly form
+		expect(call!.args.length).toBeLessThanOrEqual(101); // 100 + ellipsis
+		expect(call!.args.endsWith("…")).toBe(true);
+		// fullArgs preserves the entire JSON stringification
+		expect(call!.fullArgs).toContain(longCommand);
+		expect(call!.fullArgs.length).toBeGreaterThan(call!.args.length);
+	});
+
 	it("counts images from image content blocks", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },

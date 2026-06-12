@@ -11,6 +11,7 @@ export interface CategoryBreakdown {
 export interface ToolCallInfo {
 	toolCallId: string;
 	args: string;
+	fullArgs: string;
 	result?: string;
 	estimatedTokens: number;
 }
@@ -64,4 +65,4 @@ export interface CapturedState {
 	systemPromptOptions: BuildSystemPromptOptions;
 }
 
-export type Screen = "main" | "toolUsage" | "toolCalls" | "toolDefs" | "messages" | "userMessages" | "agentMessages" | "messagePreview";
+export type Screen = "main" | "toolUsage" | "toolCalls" | "toolCallPreview" | "toolDefs" | "messages" | "userMessages" | "agentMessages" | "messagePreview";

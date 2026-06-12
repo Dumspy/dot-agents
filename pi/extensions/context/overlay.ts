@@ -8,7 +8,7 @@ import {
 	 type SelectItem,
 	 type TUI,
 } from "@earendil-works/pi-tui";
-import type { ContextBreakdown, Screen, CategoryBreakdown, MessageInfo } from "./types.ts";
+import type { ContextBreakdown, Screen, CategoryBreakdown, MessageInfo, ToolCallInfo } from "./types.ts";
 import { formatTokens, formatPercentage } from "./estimate.ts";
 import { renderBar, padRight } from "./format.ts";
 
@@ -38,6 +38,12 @@ export class ContextOverlay {
 	private userMessagesList?: SelectList;
 	private agentMessagesList?: SelectList;
 	private messagePreviewLines?: string[];
+	private toolCallPreviewLines?: string[];
+
+	// Selection state
+	private selectedToolCall: ToolCallInfo | null = null;
+	private messagePreviewScroll = 0;
+	private toolCallPreviewScroll = 0;
 
 	constructor(breakdown: ContextBreakdown, theme: Theme, tui: TUI, done: () => void) {
 		this.breakdown = breakdown;
@@ -50,6 +56,8 @@ export class ContextOverlay {
 		if (matchesKey(data, Key.escape)) {
 			if (this.screen === "main") {
 				this.done();
+			} else if (this.screen === "toolCallPreview") {
+				this.screen = "toolCalls";
 			} else if (this.screen === "toolCalls") {
 				this.screen = "toolUsage";
 			} else if (this.screen === "messagePreview") {
@@ -100,6 +108,19 @@ export class ContextOverlay {
 				if (this.messagePreviewLines) {
 					const maxScroll = Math.max(0, this.messagePreviewLines.length - 15);
 					this.messagePreviewScroll = Math.min(maxScroll, this.messagePreviewScroll + 1);
+				}
+				this.invalidate();
+				this.tui.requestRender();
+			}
+		} else if (this.screen === "toolCallPreview") {
+			if (matchesKey(data, Key.up)) {
+				this.toolCallPreviewScroll = Math.max(0, this.toolCallPreviewScroll - 1);
+				this.invalidate();
+				this.tui.requestRender();
+			} else if (matchesKey(data, Key.down)) {
+				if (this.toolCallPreviewLines) {
+					const maxScroll = Math.max(0, this.toolCallPreviewLines.length - 15);
+					this.toolCallPreviewScroll = Math.min(maxScroll, this.toolCallPreviewScroll + 1);
 				}
 				this.invalidate();
 				this.tui.requestRender();
@@ -189,6 +210,8 @@ export class ContextOverlay {
 			this.buildToolUsageScreen(lines, width);
 		} else if (this.screen === "toolCalls") {
 			this.buildToolCallsScreen(lines, width);
+		} else if (this.screen === "toolCallPreview") {
+			this.buildToolCallPreviewScreen(lines, width);
 		} else if (this.screen === "messages") {
 			this.buildMessagesScreen(lines, width);
 		} else if (this.screen === "toolDefs") {
@@ -351,8 +374,16 @@ export class ContextOverlay {
 					scrollInfo: (t) => th.fg("dim", t),
 					noMatch: (t) => th.fg("warning", t),
 				});
-				this.toolCallsList.onSelect = () => {
-					// No further drill-down for tool calls
+				this.toolCallsList.onSelect = (item) => {
+					const call = tool.calls.find((c) => c.toolCallId === item.value);
+					if (call) {
+						this.selectedToolCall = call;
+						this.toolCallPreviewLines = undefined;
+						this.toolCallPreviewScroll = 0;
+						this.screen = "toolCallPreview";
+						this.invalidate();
+						this.tui.requestRender();
+					}
 				};
 				this.toolCallsList.onCancel = () => {
 					this.screen = "toolUsage";
@@ -367,7 +398,7 @@ export class ContextOverlay {
 		}
 
 		lines.push("");
-		lines.push(th.fg("dim", "↑↓ navigate • esc back to tools"));
+		lines.push(th.fg("dim", "↑↓ navigate • enter show full args • esc back to tools"));
 	}
 
 	private buildMessagesScreen(lines: string[], width: number): void {
@@ -442,12 +473,26 @@ export class ContextOverlay {
 		const list = role === "user" ? this.userMessagesList : this.agentMessagesList;
 		if (!list) {
 			const items: SelectItem[] = roleMessages.map((msg, index) => {
-				const pct = totalTokens > 0 ? ((msg.tokens / totalTokens) * 100).toFixed(1) + "%" : "0%";
-				const preview = msg.preview.replace(/\s+/g, " ").trim();
+				// Include thinking tokens in the displayed total so thinking-only messages
+				// don't show 0/0%.
+				const effectiveTokens = msg.tokens + (msg.thinkingTokens ?? 0);
+				const pct = totalTokens > 0 ? ((effectiveTokens / totalTokens) * 100).toFixed(1) + "%" : "0%";
+				const tokenDesc = msg.thinkingTokens
+					? `${formatTokens(msg.tokens)}+${formatTokens(msg.thinkingTokens)}t  ${pct}`
+					: `${formatTokens(msg.tokens)}  ${pct}`;
+				let preview = msg.preview.replace(/\s+/g, " ").trim();
+				if (!preview) {
+					if (msg.thinking) {
+						const thinkingSnippet = msg.thinking.replace(/\s+/g, " ").trim();
+						preview = `[thinking] ${truncateToWidth(thinkingSnippet, Math.max(10, width - 30) - 11)}`;
+					} else {
+						preview = "(empty)";
+					}
+				}
 				return {
 					value: msg.entryId,
 					label: `${index + 1}  ${truncateToWidth(preview, Math.max(10, width - 30))}`,
-					description: `${formatTokens(msg.tokens)}  ${pct}`,
+					description: tokenDesc,
 				};
 			});
 
@@ -492,8 +537,6 @@ export class ContextOverlay {
 		lines.push(th.fg("dim", "↑↓ navigate • enter preview • esc back"));
 	}
 
-	private messagePreviewScroll = 0;
-
 	private buildMessagePreviewScreen(lines: string[], width: number): void {
 		const th = this.theme;
 		const msg = this.selectedMessage;
@@ -527,6 +570,47 @@ export class ContextOverlay {
 
 		lines.push("");
 		lines.push(th.fg("dim", "↑↓ scroll • esc back to list"));
+	}
+
+	private buildToolCallPreviewScreen(lines: string[], width: number): void {
+		const th = this.theme;
+		const tool = this.getSelectedTool();
+		const call = this.selectedToolCall;
+		if (!tool || !call) {
+			lines.push(th.fg("warning", "No tool call selected"));
+			return;
+		}
+
+		const callIndex = tool.calls.findIndex((c) => c.toolCallId === call.toolCallId) + 1;
+		lines.push(th.fg("accent", th.bold(`${tool.toolName}  call ${callIndex}`)));
+		lines.push(th.fg("muted", `${formatTokens(call.estimatedTokens)} tokens • call ${call.toolCallId}`));
+		lines.push("");
+
+		if (!this.toolCallPreviewLines) {
+			const header = th.fg("toolTitle", "[args]") + "\n";
+			const argsBlock = header + (call.fullArgs || "(no args)") + "\n";
+			let body = argsBlock;
+			if (call.result !== undefined) {
+				body += "\n" + th.fg("toolTitle", "[result]") + "\n" + (call.result || "(empty)");
+			} else {
+				body += "\n" + th.fg("dim", "(no result yet)");
+			}
+			this.toolCallPreviewLines = wrapTextWithAnsi(body, width);
+		}
+
+		const previewLines = this.toolCallPreviewLines;
+		const visibleLines = previewLines.slice(this.toolCallPreviewScroll, this.toolCallPreviewScroll + 15);
+		for (const line of visibleLines) {
+			lines.push(truncateToWidth(line, width));
+		}
+
+		if (previewLines.length > 15) {
+			lines.push("");
+			lines.push(th.fg("dim", `${this.toolCallPreviewScroll + 1}-${Math.min(this.toolCallPreviewScroll + 15, previewLines.length)} / ${previewLines.length}`));
+		}
+
+		lines.push("");
+		lines.push(th.fg("dim", "↑↓ scroll • esc back to calls"));
 	}
 
 	private buildToolDefsScreen(lines: string[], width: number): void {
