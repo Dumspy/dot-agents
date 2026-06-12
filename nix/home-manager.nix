@@ -56,7 +56,7 @@
   missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
 
   # Build node_modules for Pi extensions with public npm deps
-  piNodeModules = pkgs.callPackage ./pi-node-modules.nix {};
+  piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
 
   piExtensionsBundle =
     pkgs.runCommand "dot-agents-pi-extensions-bundle" {

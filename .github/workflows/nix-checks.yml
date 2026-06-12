@@ -24,5 +24,8 @@ jobs:
       - name: Verify flake configuration
         run: nix develop -c nix flake check . --all-systems
 
+      - name: Build pi-node-modules (catches fixed-output hash mismatches)
+        run: nix develop -c nix build .#pi-node-modules
+
       - name: Lint Nix code with Alejandra
         run: nix develop -c alejandra --check .

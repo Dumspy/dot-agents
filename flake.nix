@@ -68,14 +68,39 @@
           stow-tree = import ./nix/stow-tree.nix {
             inherit pkgs lib self externalSources;
           };
+          pi-node-modules = pkgs.callPackage ./nix/pi-node-modules.nix {};
         }
     );
 
     formatter = eachSystem ({pkgs, ...}: pkgs.alejandra);
 
-    checks = eachSystem ({pre-commit-check, ...}: {
-      inherit pre-commit-check;
-    });
+    checks = eachSystem (
+      {
+        system,
+        pkgs,
+        pre-commit-check,
+        ...
+      }: let
+        # Minimal home-manager configuration to validate the module evaluates
+        # and all fixed-output derivations (e.g. pi-node-modules) build.
+        hmConfig = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            self.homeModules.default
+            {
+              home.username = "testuser";
+              home.homeDirectory = "/home/testuser";
+              home.stateVersion = "24.11";
+              programs.dot-agents.enable = true;
+            }
+          ];
+        };
+      in {
+        inherit pre-commit-check;
+        pi-node-modules = self.packages.${system}.pi-node-modules;
+        home-manager-module = hmConfig.activationPackage;
+      }
+    );
 
     devShells = eachSystem ({
       pkgs,
