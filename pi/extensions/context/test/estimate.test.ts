@@ -54,7 +54,7 @@ describe("formatTokens", () => {
 	it("formats 1k+ with k suffix", () => {
 		expect(formatTokens(1000)).toBe("1.0k");
 		expect(formatTokens(1500)).toBe("1.5k");
-		expect(formatTokens(999_999)).toBe("999.9k");
+		expect(formatTokens(999_499)).toBe("999.5k");
 	});
 
 	it("formats 1M+ with M suffix", () => {

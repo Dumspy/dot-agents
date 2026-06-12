@@ -25,7 +25,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("context", {
 		description: "Show context window token breakdown",
 		handler: async (_args, ctx: ExtensionCommandContext) => {
-			if (ctx.mode !== "tui") {
+			if (!ctx.hasUI) {
 				ctx.ui.notify("/context requires TUI mode", "error");
 				return;
 			}

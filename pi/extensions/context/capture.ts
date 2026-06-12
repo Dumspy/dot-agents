@@ -1,5 +1,5 @@
 import { calculateContextTokens, getLastAssistantUsage, type ExtensionAPI, type ExtensionCommandContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { CapturedState, ContextBreakdown, ToolUsageInfo, ToolCallInfo, ToolDefInfo, CategoryBreakdown } from "./types.ts";
+import type { CapturedState, ContextBreakdown, ToolUsageInfo, ToolCallInfo, ToolDefInfo, CategoryBreakdown, MessageInfo } from "./types.ts";
 import { estimateTokens, estimateTokensFromJson } from "./estimate.ts";
 
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
@@ -48,8 +48,8 @@ export function buildBreakdown(
 	const modelName = model ? `${model.provider}/${model.id}` : "unknown";
 	const contextWindow = model?.contextWindow ?? 200_000;
 
-	// Fallback to getSystemPromptOptions if no captured state
-	const options = captured?.systemPromptOptions ?? ctx.getSystemPromptOptions?.() ?? { cwd: ctx.cwd };
+	// Fallback to empty options if no captured state
+	const options = captured?.systemPromptOptions ?? { cwd: ctx.cwd };
 	const systemPrompt = captured?.systemPrompt ?? ctx.getSystemPrompt?.() ?? "";
 
 	// 1. System prompt
@@ -90,6 +90,7 @@ export function buildBreakdown(
 
 	const toolCallsMap = new Map<string, ToolCallInfo>();
 	const toolUsageMap = new Map<string, ToolUsageInfo>();
+	const messages: MessageInfo[] = [];
 
 	const branch = ctx.sessionManager.getBranch();
 
@@ -109,6 +110,13 @@ export function buildBreakdown(
 			agentTokens += tokens; // Custom messages are from the agent side
 			imageCount += extractImageCount(entry.content);
 			imageTokens += estimateImageTokens(entry.content);
+			messages.push({
+				entryId: entry.id,
+				role: "custom",
+				tokens,
+				preview: text.slice(0, 200),
+				timestamp: new Date(entry.timestamp).getTime(),
+			});
 			continue;
 		}
 
@@ -139,6 +147,13 @@ export function buildBreakdown(
 			}
 			imageCount += extractImageCount(msg.content);
 			imageTokens += estimateImageTokens(msg.content);
+			messages.push({
+				entryId: entry.id,
+				role: msg.role === "user" ? "user" : "agent",
+				tokens,
+				preview: text.slice(0, 200),
+				timestamp: msg.timestamp ?? new Date(entry.timestamp).getTime(),
+			});
 		}
 
 		// Extract tool calls from assistant messages
@@ -167,13 +182,12 @@ export function buildBreakdown(
 			}
 		}
 
-		// Tool results
+		// Tool results — counted in tool usage, NOT in messages
 		if (msg.role === "toolResult") {
 			const resultText = extractText(msg.content);
 			const resultTokens = estimateTokens(resultText);
-			messagesTokens += resultTokens;
 
-			// Attribute to tool usage
+			// Attribute to tool usage only (not messages)
 			const callInfo = toolCallsMap.get(msg.toolCallId ?? "");
 			if (callInfo && msg.toolName) {
 				callInfo.result = resultText;
@@ -236,6 +250,7 @@ export function buildBreakdown(
 		toolUsage,
 		toolDefinitions: toolDefinitions.sort((a, b) => b.schemaTokens - a.schemaTokens),
 		messageBreakdown: { userTokens, agentTokens },
+		messages: messages.sort((a, b) => b.tokens - a.tokens),
 		compactionTokens,
 		imageCount,
 		imageTokens,

@@ -1,11 +1,11 @@
-import type { BuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
+import type { BuildSystemPromptOptions, ThemeColor } from "@earendil-works/pi-coding-agent";
 
 export interface CategoryBreakdown {
 	id: string;
 	name: string;
 	tokens: number;
 	percentage: number;
-	color: string;
+	color: ThemeColor;
 }
 
 export interface ToolCallInfo {
@@ -27,6 +27,14 @@ export interface ToolDefInfo {
 	schemaTokens: number;
 }
 
+export interface MessageInfo {
+	entryId: string;
+	role: "user" | "agent" | "custom";
+	tokens: number;
+	preview: string;
+	timestamp: number;
+}
+
 export interface MessageBreakdown {
 	userTokens: number;
 	agentTokens: number;
@@ -41,6 +49,7 @@ export interface ContextBreakdown {
 	toolUsage: ToolUsageInfo[];
 	toolDefinitions: ToolDefInfo[];
 	messageBreakdown: MessageBreakdown;
+	messages: MessageInfo[];
 	compactionTokens: number;
 	imageCount: number;
 	imageTokens: number;
@@ -51,4 +60,4 @@ export interface CapturedState {
 	systemPromptOptions: BuildSystemPromptOptions;
 }
 
-export type Screen = "main" | "toolUsage" | "toolCalls" | "toolDefs" | "messages";
+export type Screen = "main" | "toolUsage" | "toolCalls" | "toolDefs" | "messages" | "userMessages" | "agentMessages" | "messagePreview";

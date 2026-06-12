@@ -7,12 +7,10 @@ const makeMockCtx = (
 		model?: { provider: string; id: string; contextWindow: number };
 		usage?: { tokens: number; contextWindow: number };
 		systemPrompt?: string;
-		promptOptions?: Record<string, unknown>;
 		branch?: unknown[];
 	},
 ): ExtensionCommandContext => {
 	return {
-		mode: "tui",
 		hasUI: true,
 		cwd: "/test",
 		model: opts.model as unknown as ExtensionCommandContext["model"],
@@ -31,18 +29,11 @@ const makeMockCtx = (
 		ui: {} as unknown as ExtensionCommandContext["ui"],
 		modelRegistry: {} as unknown as ExtensionCommandContext["modelRegistry"],
 		isIdle: () => true,
-		isProjectTrusted: () => true,
 		signal: undefined,
 		abort: () => {},
 		hasPendingMessages: () => false,
 		shutdown: () => {},
 		compact: () => {},
-		getSystemPromptOptions: () =>
-			({
-				cwd: "/test",
-				selectedTools: ["read", "bash"],
-				...opts.promptOptions,
-			} as unknown as ReturnType<ExtensionCommandContext["getSystemPromptOptions"]>),
 		waitForIdle: () => Promise.resolve(),
 		newSession: () => Promise.resolve({ cancelled: false }),
 		fork: () => Promise.resolve({ cancelled: false }),
@@ -50,6 +41,17 @@ const makeMockCtx = (
 		switchSession: () => Promise.resolve({ cancelled: false }),
 		reload: () => Promise.resolve(),
 	} as unknown as ExtensionCommandContext;
+};
+
+const makeCaptured = (promptOptions?: Record<string, unknown>) => {
+	return {
+		systemPrompt: "",
+		systemPromptOptions: {
+			cwd: "/test",
+			selectedTools: ["read", "bash"],
+			...promptOptions,
+		},
+	};
 };
 
 const makeMockPi = (tools: ToolInfo[]): ExtensionAPI => {
@@ -92,9 +94,9 @@ describe("buildBreakdown", () => {
 	it("counts tool definitions from active tools", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: {
-				selectedTools: ["read", "bash"],
-			},
+		});
+		const captured = makeCaptured({
+			selectedTools: ["read", "bash"],
 		});
 		const pi = makeMockPi([
 			{
@@ -110,7 +112,7 @@ describe("buildBreakdown", () => {
 				sourceInfo: { path: "builtin", source: "builtin", scope: "temporary", origin: "top-level" },
 			},
 		] as unknown as ToolInfo[]);
-		const result = buildBreakdown(pi, ctx, null);
+		const result = buildBreakdown(pi, ctx, captured);
 
 		const toolsCat = result.categories.find((c) => c.id === "tools");
 		expect(toolsCat).toBeDefined();
@@ -121,15 +123,15 @@ describe("buildBreakdown", () => {
 	it("counts skills from systemPromptOptions", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: {
-				selectedTools: [],
-				skills: [
-					{ name: "test-skill", description: "This is a test skill description. " + "b".repeat(100) },
-				],
-			},
+		});
+		const captured = makeCaptured({
+			selectedTools: [],
+			skills: [
+				{ name: "test-skill", description: "This is a test skill description. " + "b".repeat(100) },
+			],
 		});
 		const pi = makeMockPi([]);
-		const result = buildBreakdown(pi, ctx, null);
+		const result = buildBreakdown(pi, ctx, captured);
 
 		const skillsCat = result.categories.find((c) => c.id === "skills");
 		expect(skillsCat).toBeDefined();
@@ -139,15 +141,15 @@ describe("buildBreakdown", () => {
 	it("counts context files from systemPromptOptions", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: {
-				selectedTools: [],
-				contextFiles: [
-					{ path: "AGENTS.md", content: "# Test\n\n" + "c".repeat(200) },
-				],
-			},
+		});
+		const captured = makeCaptured({
+			selectedTools: [],
+			contextFiles: [
+				{ path: "AGENTS.md", content: "# Test\n\n" + "c".repeat(200) },
+			],
 		});
 		const pi = makeMockPi([]);
-		const result = buildBreakdown(pi, ctx, null);
+		const result = buildBreakdown(pi, ctx, captured);
 
 		const contextCat = result.categories.find((c) => c.id === "context");
 		expect(contextCat).toBeDefined();
@@ -157,7 +159,6 @@ describe("buildBreakdown", () => {
 	it("counts messages from session branch", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: { selectedTools: [] },
 			branch: [
 				{
 					type: "message",
@@ -188,7 +189,6 @@ describe("buildBreakdown", () => {
 	it("counts tool usage from assistant tool calls and results", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: { selectedTools: [] },
 			branch: [
 				{
 					type: "message",
@@ -230,7 +230,6 @@ describe("buildBreakdown", () => {
 	it("counts images from image content blocks", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: { selectedTools: [] },
 			branch: [
 				{
 					type: "message",
@@ -257,7 +256,6 @@ describe("buildBreakdown", () => {
 	it("counts compaction summaries", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: { selectedTools: [] },
 			branch: [
 				{
 					type: "message",
@@ -279,7 +277,6 @@ describe("buildBreakdown", () => {
 	it("counts custom_messages from session branch", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: { selectedTools: [] },
 			branch: [
 				{
 					type: "custom_message",
@@ -298,7 +295,6 @@ describe("buildBreakdown", () => {
 	it("always adds free space as the last category", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: { selectedTools: [] },
 			branch: [
 				{
 					type: "message",
@@ -321,7 +317,6 @@ describe("buildBreakdown", () => {
 	it("sorts categories by token count descending", () => {
 		const ctx = makeMockCtx({
 			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
-			promptOptions: { selectedTools: [] },
 			branch: [
 				{
 					type: "message",
@@ -363,5 +358,149 @@ describe("buildBreakdown", () => {
 		const result = buildBreakdown(pi, ctx, null);
 
 		expect(result.contextWindow).toBe(50_000);
+	});
+
+	it("does NOT count tool results in messages tokens", () => {
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					type: "message",
+					message: {
+						role: "user",
+						content: "Hello",
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "call_1",
+								name: "bash",
+								arguments: { command: "echo hello" },
+							},
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "call_1",
+						toolName: "bash",
+						content: [{ type: "text", text: "hello world this is a long result" }],
+						isError: false,
+					},
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		// Messages category should only include user message, not tool result
+		const messagesCat = result.categories.find((c) => c.id === "messages");
+		const toolUseCat = result.categories.find((c) => c.id === "tooluse");
+		expect(messagesCat).toBeDefined();
+		expect(toolUseCat).toBeDefined();
+		// Tool result tokens should be in toolUse, not messages
+		expect(toolUseCat!.tokens).toBeGreaterThan(messagesCat!.tokens);
+		// Messages should be small (just the user message)
+		expect(messagesCat!.tokens).toBeLessThan(10);
+		// Tool result should still be counted in tool usage
+		expect(toolUseCat!.tokens).toBeGreaterThan(0);
+	});
+
+	it("populates messages array with individual user and agent messages", () => {
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					id: "entry1",
+					type: "message",
+					message: {
+						role: "user",
+						content: "Hello world",
+						timestamp: 1000,
+					},
+				},
+				{
+					id: "entry2",
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [{ type: "text", text: "Hi there! " + "y".repeat(100) }],
+						timestamp: 2000,
+					},
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		expect(result.messages).toHaveLength(2);
+		const userMsg = result.messages.find((m) => m.role === "user");
+		const agentMsg = result.messages.find((m) => m.role === "agent");
+		expect(userMsg).toBeDefined();
+		expect(userMsg!.entryId).toBe("entry1");
+		expect(userMsg!.preview).toContain("Hello world");
+		expect(userMsg!.tokens).toBeGreaterThan(0);
+		expect(agentMsg).toBeDefined();
+		expect(agentMsg!.entryId).toBe("entry2");
+		expect(agentMsg!.preview).toContain("Hi there!");
+		expect(agentMsg!.tokens).toBeGreaterThan(0);
+	});
+
+	it("populates messages array with custom_messages", () => {
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					id: "entry1",
+					type: "custom_message",
+					content: "Custom injected message",
+					timestamp: "2024-01-01T00:00:00.000Z",
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		expect(result.messages).toHaveLength(1);
+		expect(result.messages[0]!.role).toBe("custom");
+		expect(result.messages[0]!.entryId).toBe("entry1");
+		expect(result.messages[0]!.preview).toBe("Custom injected message");
+	});
+
+	it("sorts messages array by token count descending", () => {
+		const ctx = makeMockCtx({
+			model: { provider: "anthropic", id: "claude-test", contextWindow: 100_000 },
+			branch: [
+				{
+					id: "entry1",
+					type: "message",
+					message: {
+						role: "user",
+						content: "Hello",
+					},
+				},
+				{
+					id: "entry2",
+					type: "message",
+					message: {
+						role: "user",
+						content: "Hello world! " + "a".repeat(500),
+					},
+				},
+			],
+		});
+		const pi = makeMockPi([]);
+		const result = buildBreakdown(pi, ctx, null);
+
+		expect(result.messages[0]!.entryId).toBe("entry2");
+		expect(result.messages[1]!.entryId).toBe("entry1");
+		expect(result.messages[0]!.tokens).toBeGreaterThan(result.messages[1]!.tokens);
 	});
 });

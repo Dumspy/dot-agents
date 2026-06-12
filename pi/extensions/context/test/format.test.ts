@@ -41,7 +41,7 @@ describe("renderBar", () => {
 
 	it("uses different colors for fill and bg", () => {
 		const bar = renderBar(10, 50, (s) => `FILL:${s}`, (s) => `BG:${s}`);
-		expect(bar).toBe("FILL:█FILL:█FILL:█FILL:█FILL:█BG:░BG:░BG:░BG:░BG:░");
+		expect(bar).toBe("FILL:█████BG:░░░░░");
 	});
 });
 
@@ -57,7 +57,7 @@ describe("padRight", () => {
 
 	it("handles ANSI codes", () => {
 		const text = "\x1b[31mhi\x1b[0m";
-		expect(padRight(text, 5)).toBe("\x1b[31mhi\x1b[0m  ");
+		expect(padRight(text, 5)).toBe("\x1b[31mhi\x1b[0m   ");
 	});
 });
 

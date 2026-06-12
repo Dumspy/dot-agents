@@ -4,10 +4,11 @@ import {
 	Key,
 	SelectList,
 	truncateToWidth,
+	wrapTextWithAnsi,
 	 type SelectItem,
 	 type TUI,
 } from "@earendil-works/pi-tui";
-import type { ContextBreakdown, Screen, CategoryBreakdown } from "./types.ts";
+import type { ContextBreakdown, Screen, CategoryBreakdown, MessageInfo } from "./types.ts";
 import { formatTokens, formatPercentage } from "./estimate.ts";
 import { renderBar, padRight } from "./format.ts";
 
@@ -24,6 +25,9 @@ export class ContextOverlay {
 	// Navigation state
 	private mainIndex = 0;
 
+	// Drill-down state
+	private selectedMessage: MessageInfo | null = null;
+
 	// Cache
 	private cachedLines?: string[];
 	private cachedWidth?: number;
@@ -31,6 +35,9 @@ export class ContextOverlay {
 	private toolCallsList?: SelectList;
 	private toolDefsList?: SelectList;
 	private messagesList?: SelectList;
+	private userMessagesList?: SelectList;
+	private agentMessagesList?: SelectList;
+	private messagePreviewLines?: string[];
 
 	constructor(breakdown: ContextBreakdown, theme: Theme, tui: TUI, done: () => void) {
 		this.breakdown = breakdown;
@@ -43,11 +50,17 @@ export class ContextOverlay {
 		if (matchesKey(data, Key.escape)) {
 			if (this.screen === "main") {
 				this.done();
+			} else if (this.screen === "toolCalls") {
+				this.screen = "toolUsage";
+			} else if (this.screen === "messagePreview") {
+				this.screen = this.selectedMessage?.role === "user" ? "userMessages" : "agentMessages";
+			} else if (this.screen === "userMessages" || this.screen === "agentMessages") {
+				this.screen = "messages";
 			} else {
-				this.screen = this.screen === "toolCalls" ? "toolUsage" : "main";
-				this.invalidate();
-				this.tui.requestRender();
+				this.screen = "main";
 			}
+			this.invalidate();
+			this.tui.requestRender();
 			return;
 		}
 
@@ -69,6 +82,27 @@ export class ContextOverlay {
 			this.toolDefsList.handleInput(data);
 			this.invalidate();
 			this.tui.requestRender();
+		} else if (this.screen === "userMessages" && this.userMessagesList) {
+			this.userMessagesList.handleInput(data);
+			this.invalidate();
+			this.tui.requestRender();
+		} else if (this.screen === "agentMessages" && this.agentMessagesList) {
+			this.agentMessagesList.handleInput(data);
+			this.invalidate();
+			this.tui.requestRender();
+		} else if (this.screen === "messagePreview") {
+			// Preview screen is view-only; scroll with up/down
+			if (matchesKey(data, Key.up)) {
+				this.messagePreviewScroll = Math.max(0, this.messagePreviewScroll - 1);
+				this.invalidate();
+				this.tui.requestRender();
+			} else if (matchesKey(data, Key.down)) {
+				if (this.messagePreviewLines) {
+					this.messagePreviewScroll = Math.max(0, Math.min(this.messagePreviewLines.length - 1, this.messagePreviewScroll + 1));
+				}
+				this.invalidate();
+				this.tui.requestRender();
+			}
 		}
 	}
 
@@ -105,6 +139,8 @@ export class ContextOverlay {
 		this.toolCallsList?.invalidate();
 		this.messagesList?.invalidate();
 		this.toolDefsList?.invalidate();
+		this.userMessagesList?.invalidate();
+		this.agentMessagesList?.invalidate();
 	}
 
 	private handleMainInput(data: string): void {
@@ -156,6 +192,12 @@ export class ContextOverlay {
 			this.buildMessagesScreen(lines, width);
 		} else if (this.screen === "toolDefs") {
 			this.buildToolDefsScreen(lines, width);
+		} else if (this.screen === "userMessages") {
+			this.buildUserMessagesScreen(lines, width);
+		} else if (this.screen === "agentMessages") {
+			this.buildAgentMessagesScreen(lines, width);
+		} else if (this.screen === "messagePreview") {
+			this.buildMessagePreviewScreen(lines, width);
 		}
 
 		return lines;
@@ -180,7 +222,7 @@ export class ContextOverlay {
 
 		// Categories
 		for (let i = 0; i < interactive.length; i++) {
-			const cat = interactive[i];
+			const cat = interactive[i]!;
 			const isSelected = i === this.mainIndex;
 			this.renderCategoryRow(lines, cat, isSelected, width);
 		}
@@ -188,7 +230,8 @@ export class ContextOverlay {
 		// Free space
 		if (freeCat) {
 			lines.push("");
-			this.renderCategoryRow(lines, freeCat, false, width);
+			const cat = freeCat as CategoryBreakdown;
+			this.renderCategoryRow(lines, cat, false, width);
 		}
 
 		// Footer
@@ -355,8 +398,10 @@ export class ContextOverlay {
 				scrollInfo: (t) => th.fg("dim", t),
 				noMatch: (t) => th.fg("warning", t),
 			});
-			this.messagesList.onSelect = () => {
-				// No further drill-down for messages
+			this.messagesList.onSelect = (item) => {
+				this.screen = item.value === "user" ? "userMessages" : "agentMessages";
+				this.invalidate();
+				this.tui.requestRender();
 			};
 			this.messagesList.onCancel = () => {
 				this.screen = "main";
@@ -370,7 +415,110 @@ export class ContextOverlay {
 		}
 
 		lines.push("");
-		lines.push(th.fg("dim", "↑↓ navigate • esc back to overview"));
+		lines.push(th.fg("dim", "↑↓ navigate • enter drill-down • esc back to overview"));
+	}
+
+	private buildUserMessagesScreen(lines: string[], width: number): void {
+		this.buildMessageListScreen(lines, width, "user", "User Messages", this.breakdown.messageBreakdown.userTokens);
+	}
+
+	private buildAgentMessagesScreen(lines: string[], width: number): void {
+		this.buildMessageListScreen(lines, width, "agent", "Agent Messages", this.breakdown.messageBreakdown.agentTokens);
+	}
+
+	private buildMessageListScreen(lines: string[], width: number, role: "user" | "agent", title: string, totalTokens: number): void {
+		const th = this.theme;
+		const roleMessages = this.breakdown.messages.filter((m) => m.role === role);
+
+		lines.push(th.fg("accent", th.bold(title)));
+		lines.push(th.fg("muted", `${formatTokens(totalTokens)} tokens • ${roleMessages.length} messages`));
+		lines.push("");
+
+		const list = role === "user" ? this.userMessagesList : this.agentMessagesList;
+		if (!list) {
+			const items: SelectItem[] = roleMessages.map((msg, index) => {
+				const pct = totalTokens > 0 ? ((msg.tokens / totalTokens) * 100).toFixed(1) + "%" : "0%";
+				const preview = msg.preview.replace(/\s+/g, " ").trim();
+				return {
+					value: msg.entryId,
+					label: `${index + 1}  ${truncateToWidth(preview, Math.max(10, width - 30))}`,
+					description: `${formatTokens(msg.tokens)}  ${pct}`,
+				};
+			});
+
+			const newList = new SelectList(items, Math.min(items.length, 10), {
+				selectedPrefix: (t) => th.fg("accent", t),
+				selectedText: (t) => th.fg("accent", t),
+				description: (t) => th.fg("muted", t),
+				scrollInfo: (t) => th.fg("dim", t),
+				noMatch: (t) => th.fg("warning", t),
+			});
+			newList.onSelect = (item) => {
+				const msg = this.breakdown.messages.find((m) => m.entryId === item.value);
+				if (msg) {
+					this.selectedMessage = msg;
+					this.messagePreviewLines = undefined;
+					this.messagePreviewScroll = 0;
+					this.screen = "messagePreview";
+					this.invalidate();
+					this.tui.requestRender();
+				}
+			};
+			newList.onCancel = () => {
+				this.screen = "messages";
+				this.invalidate();
+				this.tui.requestRender();
+			};
+			if (role === "user") {
+				this.userMessagesList = newList;
+			} else {
+				this.agentMessagesList = newList;
+			}
+		}
+
+		const activeList = role === "user" ? this.userMessagesList : this.agentMessagesList;
+		if (activeList) {
+			lines.push(...activeList.render(width));
+		} else {
+			lines.push(th.fg("muted", "No messages"));
+		}
+
+		lines.push("");
+		lines.push(th.fg("dim", "↑↓ navigate • enter preview • esc back"));
+	}
+
+	private messagePreviewScroll = 0;
+
+	private buildMessagePreviewScreen(lines: string[], width: number): void {
+		const th = this.theme;
+		const msg = this.selectedMessage;
+		if (!msg) {
+			lines.push(th.fg("warning", "No message selected"));
+			return;
+		}
+
+		lines.push(th.fg("accent", th.bold(`${msg.role === "user" ? "User" : "Agent"} Message`)));
+		lines.push(th.fg("muted", `${formatTokens(msg.tokens)} tokens • entry ${msg.entryId}`));
+		lines.push("");
+
+		if (!this.messagePreviewLines) {
+			const preview = msg.preview || "(empty message)";
+			this.messagePreviewLines = wrapTextWithAnsi(preview, width);
+		}
+
+		const previewLines = this.messagePreviewLines;
+		const visibleLines = previewLines.slice(this.messagePreviewScroll, this.messagePreviewScroll + 15);
+		for (const line of visibleLines) {
+			lines.push(truncateToWidth(line, width));
+		}
+
+		if (previewLines.length > 15) {
+			lines.push("");
+			lines.push(th.fg("dim", `${this.messagePreviewScroll + 1}-${Math.min(this.messagePreviewScroll + 15, previewLines.length)} / ${previewLines.length}`));
+		}
+
+		lines.push("");
+		lines.push(th.fg("dim", "↑↓ scroll • esc back to list"));
 	}
 
 	private buildToolDefsScreen(lines: string[], width: number): void {
