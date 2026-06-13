@@ -95,6 +95,20 @@
     cp -L ${piDir}/package.json $out/.pi/agent/package.json
     cp -L ${piDir}/package-lock.json $out/.pi/agent/package-lock.json
   '';
+
+  # Static helpers shipped at the root of the stow branch
+  stowHelpersDir = ../stow;
+  hasStowHelpers = builtins.pathExists stowHelpersDir;
+  copyStowHelpers = lib.optionalString hasStowHelpers ''
+    for f in ${stowHelpersDir}/* ${stowHelpersDir}/.*; do
+      if [ -f "$f" ]; then
+        cp -L "$f" "$out/$(basename "$f")"
+        case "$(basename "$f")" in
+          *.sh) chmod +x "$out/$(basename "$f")" ;;
+        esac
+      fi
+    done
+  '';
 in
   pkgs.runCommand "dot-agents-stow-tree" {
     preferLocalBuild = true;
@@ -125,4 +139,7 @@ in
 
     # OpenCode-specific skills -> ~/.config/opencode/skills/
     ${copyOpencodeSkills}
+
+    # Stow branch helpers (gitignore, setup.sh, update.sh, README.md)
+    ${copyStowHelpers}
   ''

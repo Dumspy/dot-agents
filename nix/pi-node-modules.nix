@@ -42,6 +42,8 @@ in
       {
         x86_64-linux = "sha256-FCCDBCxuwY+XnxoXfNhmLGIX7oE8q1FFItmRysdJpgQ=";
         aarch64-darwin = "sha256-ewRP/st5vixYf2ShHbK/gXoJakZvh7UhzRt9+CV7+Cw=";
+        aarch64-linux = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        x86_64-darwin = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
       }.${
         system
       } or (throw "dot-agents pi-node-modules: no outputHash for platform ${system}. Run the build to get the 'got:' hash and add it here.");
