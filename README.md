@@ -61,15 +61,16 @@ programs.dot-agents = {
 
 ## Non-Nix (Stow)
 
-For non-Nix systems, use the auto-generated `stow` branch which vendors all external skills:
+For non-Nix systems, use the auto-generated `stow` branch which vendors all external skills.
+See the `README.md` on the `stow` branch for setup, update, and usage instructions:
 
 ```bash
 git clone --branch stow https://github.com/<you>/dot-agents.git ~/dot-agents
 cd ~/dot-agents
-stow . -t ~
+cat README.md
 ```
 
-The `stow` branch is automatically updated by a GitHub Action on every push to `main`.
+The `stow` branch is automatically updated by a GitHub Action on every push to `development`.
 
 ## Structure
 
