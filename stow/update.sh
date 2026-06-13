@@ -7,3 +7,10 @@ cd "$(dirname "$0")"
 echo "[dot-agents] Updating stow branch..."
 git fetch origin stow
 git reset --hard origin/stow
+
+# git reset --hard does not trigger the post-merge hook, so reinstall
+# dependencies manually when the lockfile changes.
+if [ -f .pi/agent/package-lock.json ]; then
+  echo "[dot-agents] Installing Pi extension dependencies..."
+  (cd .pi/agent && npm ci)
+fi
