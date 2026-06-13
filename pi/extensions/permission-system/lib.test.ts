@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_CONFIG,
 	applyMask,
 	buildSessionApprovalKey,
+	createInputDebouncer,
 	createLogEntry,
 	deepMerge,
 	formatLogLine,
@@ -816,5 +817,68 @@ describe("formatLogLine", () => {
 		expect(parsed.value).toBe("src/index.ts");
 		expect(parsed.action).toBe("allowed");
 		expect(parsed.reason).toBe("rule: allow");
+	});
+});
+
+describe("createInputDebouncer", () => {
+	it("resolves immediately when no recent input", async () => {
+		vi.useFakeTimers();
+		const debouncer = createInputDebouncer();
+		const promise = debouncer.waitForIdle(500);
+		await vi.advanceTimersByTimeAsync(0);
+		await expect(promise).resolves.toBeUndefined();
+		vi.useRealTimers();
+	});
+
+	it("waits for the debounce window after input", async () => {
+		vi.useFakeTimers();
+		const debouncer = createInputDebouncer();
+		debouncer.recordInput();
+		const promise = debouncer.waitForIdle(500);
+
+		await vi.advanceTimersByTimeAsync(400);
+		expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+		await vi.advanceTimersByTimeAsync(100);
+		await expect(promise).resolves.toBeUndefined();
+		vi.useRealTimers();
+	});
+
+	it("resets the debounce window when input arrives during the wait", async () => {
+		vi.useFakeTimers();
+		const debouncer = createInputDebouncer();
+		debouncer.recordInput();
+		const promise = debouncer.waitForIdle(500);
+
+		await vi.advanceTimersByTimeAsync(400);
+		debouncer.recordInput();
+		await vi.advanceTimersByTimeAsync(400);
+		expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+		await vi.advanceTimersByTimeAsync(100);
+		await expect(promise).resolves.toBeUndefined();
+		vi.useRealTimers();
+	});
+
+	it("aborts early when the signal is already aborted", async () => {
+		vi.useFakeTimers();
+		const debouncer = createInputDebouncer();
+		const controller = new AbortController();
+		controller.abort();
+		await expect(debouncer.waitForIdle(500, controller.signal)).rejects.toThrow("aborted");
+		vi.useRealTimers();
+	});
+
+	it("aborts when the signal is aborted while waiting", async () => {
+		vi.useFakeTimers();
+		const debouncer = createInputDebouncer();
+		debouncer.recordInput();
+		const controller = new AbortController();
+		const promise = debouncer.waitForIdle(500, controller.signal);
+
+		await vi.advanceTimersByTimeAsync(200);
+		controller.abort();
+		await expect(promise).rejects.toThrow("aborted");
+		vi.useRealTimers();
 	});
 });

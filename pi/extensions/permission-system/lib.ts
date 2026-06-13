@@ -355,3 +355,66 @@ export function createLogEntry(
 export function formatLogLine(entry: LogEntry): string {
 	return JSON.stringify(entry) + "\n";
 }
+
+// ------------------------------------------------------------------
+// Input debouncer — delay permission prompts while the user is typing
+// ------------------------------------------------------------------
+
+export interface InputDebouncer {
+	/** Mark that the user just provided input. */
+	recordInput(): void;
+	/** Wait until no input has been recorded for `ms` milliseconds. */
+	waitForIdle(ms: number, signal?: AbortSignal): Promise<void>;
+}
+
+/**
+ * Create a lightweight debouncer for terminal input.
+ *
+ * Permission prompts call `waitForIdle()` before showing a dialog so that a
+ * popup does not steal focus while the user is still typing.
+ */
+export function createInputDebouncer(): InputDebouncer {
+	let lastInputTime = 0;
+
+	return {
+		recordInput() {
+			lastInputTime = Date.now();
+		},
+		waitForIdle(ms, signal) {
+			if (signal?.aborted) {
+				return Promise.reject(new Error("aborted"));
+			}
+
+			return new Promise<void>((resolve, reject) => {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+
+				const cleanup = () => {
+					if (timer !== undefined) {
+						clearTimeout(timer);
+						timer = undefined;
+					}
+					signal?.removeEventListener("abort", onAbort);
+				};
+
+				const onAbort = () => {
+					cleanup();
+					reject(new Error("aborted"));
+				};
+
+				signal?.addEventListener("abort", onAbort);
+
+				const check = () => {
+					const remaining = lastInputTime + ms - Date.now();
+					if (remaining <= 0) {
+						cleanup();
+						resolve();
+						return;
+					}
+					timer = setTimeout(check, remaining);
+				};
+
+				check();
+			});
+		},
+	};
+}
