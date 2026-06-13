@@ -43,6 +43,7 @@ import {
 	DEFAULT_CONFIG,
 	applyMask,
 	buildSessionApprovalKey,
+	createInputDebouncer,
 	createLogEntry,
 	deepMerge,
 	formatLogLine,
@@ -56,6 +57,8 @@ import {
 	type PermissionAction,
 	type PermissionsConfig,
 } from "./lib.js";
+
+const PERMISSION_PROMPT_DEBOUNCE_MS = Number(process.env.PERMISSION_PROMPT_DEBOUNCE_MS ?? 500);
 
 function getAgentDir(): string {
 	const home = process.env.HOME || process.env.USERPROFILE || "/tmp";
@@ -93,6 +96,8 @@ const SYSTEM_PROMPT_NOTICE = `Permission system is active. Some paths and tools 
 export default function permissionSystem(pi: ExtensionAPI) {
 	let config = DEFAULT_CONFIG;
 	const sessionApprovals = new Set<string>();
+	const inputDebouncer = createInputDebouncer();
+	let unsubscribeTerminalInput: (() => void) | undefined;
 
 	function reloadConfig(cwd: string) {
 		config = loadConfig(cwd);
@@ -138,6 +143,19 @@ export default function permissionSystem(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		reloadConfig(ctx.cwd);
 		sessionApprovals.clear();
+
+		if (ctx.hasUI) {
+			unsubscribeTerminalInput?.();
+			unsubscribeTerminalInput = ctx.ui.onTerminalInput(() => {
+				inputDebouncer.recordInput();
+				return undefined;
+			});
+		}
+	});
+
+	pi.on("session_shutdown", async (_event, _ctx) => {
+		unsubscribeTerminalInput?.();
+		unsubscribeTerminalInput = undefined;
 	});
 
 	pi.on("before_agent_start", async (event, _ctx) => {
@@ -179,9 +197,11 @@ export default function permissionSystem(pi: ExtensionAPI) {
 					if (!sessionApprovals.has(extApprovalKey)) {
 						const description = formatToolDescription(toolName, input);
 						const title = `External directory access\n\nThe agent wants to ${description}\n\nThis path is outside the current workspace:\n  ${ctx.cwd}\n\nTarget: ${resolvedPath}\n\nAllow leaving the workspace?`;
+						await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
 						const choice = await ctx.ui.select(title, ["Yes", "No"]);
 
 						if (choice === "No" || choice === undefined) {
+							await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
 							const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
 							if (alternative) {
 								try {
@@ -249,6 +269,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 
 		const description = formatToolDescription(toolName, input);
 		const title = `Permission required\n\nThe agent wants to ${description}\n\nAllow this action?`;
+		await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
 		const choice = await ctx.ui.select(title, ["Yes", "No", "Explain"]);
 
 		if (choice === "Yes") {
@@ -271,6 +292,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		}
 
 		// "No" or cancelled
+		await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
 		const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
 		if (alternative) {
 			try {
