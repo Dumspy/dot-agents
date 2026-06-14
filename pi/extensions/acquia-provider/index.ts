@@ -32,7 +32,7 @@ export default async function acquiaProvider(pi: ExtensionAPI) {
 		pi.registerProvider(ACQUIA_PROVIDER_NAME, {
 			name: ACQUIA_PROVIDER_LABEL,
 			baseUrl,
-			apiKey: ACQUIA_API_KEY_ENV,
+			apiKey: `$${ACQUIA_API_KEY_ENV}`,
 			api: "openai-completions",
 			models,
 		});

@@ -23,7 +23,7 @@ This workflow is tuned for this repo. It assumes:
 
 ### 1. Read the issue(s)
 
-Use `gh issue view <N> --repo Dumspy/dot-agents --comments` for each issue.
+Use `gh issue view <N> --repo Dumspy/dot-agents --json title,body,labels,comments` for each issue.
 If the issue has no description or comments, treat the title as the primary
 source of intent.
 
