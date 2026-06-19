@@ -309,6 +309,17 @@ export function buildSessionApprovalKey(toolName: string, value: string): string
 	return `${toolName}:${value}`;
 }
 
+const SKILL_MARKDOWN_PATTERNS = [
+	"**/.agents/skills/**/*.md",
+	"**/.pi/agent/skills/**/*.md",
+	"**/.config/opencode/skill/**/*.md",
+	"**/.config/opencode/skills/**/*.md",
+];
+
+export function isSkillMarkdownPath(resolvedPath: string): boolean {
+	return SKILL_MARKDOWN_PATTERNS.some((pattern) => matchGlob(pattern, resolvedPath));
+}
+
 // ------------------------------------------------------------------
 // Logging — Pure Logic
 // ------------------------------------------------------------------

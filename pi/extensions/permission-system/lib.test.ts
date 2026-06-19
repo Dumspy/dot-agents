@@ -13,6 +13,7 @@ import {
 	hardStop,
 	isExternalPath,
 	isPathBasedTool,
+	isSkillMarkdownPath,
 	matchGlob,
 	resolveMask,
 	resolvePermission,
@@ -666,7 +667,41 @@ describe("getExternalDirectoryRoot", () => {
 	});
 });
 
-describe("DEFAULT_CONFIG — external_directory", () => {
+describe("isSkillMarkdownPath", () => {
+	it("returns true for markdown files in .agents/skills/", () => {
+		expect(isSkillMarkdownPath("/Users/user/.agents/skills/grill-me/SKILL.md")).toBe(true);
+		expect(isSkillMarkdownPath("/Users/user/.agents/skills/init-deep/README.md")).toBe(true);
+	});
+
+	it("returns true for markdown files in .pi/agent/skills/", () => {
+		expect(isSkillMarkdownPath("/Users/user/.pi/agent/skills/my-skill/SKILL.md")).toBe(true);
+	});
+
+	it("returns true for markdown files in .config/opencode/skill/", () => {
+		expect(isSkillMarkdownPath("/Users/user/.config/opencode/skill/agent-browser/SKILL.md")).toBe(true);
+	});
+
+	it("returns true for markdown files in .config/opencode/skills/", () => {
+		expect(isSkillMarkdownPath("/Users/user/.config/opencode/skills/librarian/SKILL.md")).toBe(true);
+	});
+
+	it("returns false for non-markdown files in skill directories", () => {
+		expect(isSkillMarkdownPath("/Users/user/.agents/skills/my-skill/index.js")).toBe(false);
+		expect(isSkillMarkdownPath("/Users/user/.pi/agent/skills/my-skill/config.json")).toBe(false);
+	});
+
+	it("returns false for markdown files outside skill directories", () => {
+		expect(isSkillMarkdownPath("/Users/user/.agents/README.md")).toBe(false);
+		expect(isSkillMarkdownPath("/Users/user/.config/opencode/config.md")).toBe(false);
+		expect(isSkillMarkdownPath("/Users/user/project/README.md")).toBe(false);
+	});
+
+	it("returns false for empty string", () => {
+		expect(isSkillMarkdownPath("")).toBe(false);
+	});
+});
+
+ describe("DEFAULT_CONFIG — external_directory", () => {
 	const extRules = DEFAULT_CONFIG.rules.external_directory as Record<string, string>;
 
 	it("defaults to ask for any external directory", () => {
