@@ -102,21 +102,6 @@
       }
     );
 
-    devShells = eachSystem ({
-      pkgs,
-      pre-commit-check,
-      ...
-    }: {
-      default = pkgs.mkShell {
-        shellHook =
-          pre-commit-check.shellHook
-          + ''
-            cd pi && npm install
-          '';
-        packages = [pkgs.nodejs pkgs.rsync pkgs.alejandra];
-      };
-    });
-
     homeModules.default = import ./nix/home-manager.nix {inherit self externalSources;};
   };
 }

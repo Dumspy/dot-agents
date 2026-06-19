@@ -18,3 +18,9 @@ node_modules
 
 # direnv
 .direnv
+
+# devenv
+.devenv/
+
+# pi
+.pi/todos
