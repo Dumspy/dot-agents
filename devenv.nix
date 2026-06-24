@@ -1,7 +1,7 @@
 {pkgs, ...}: {
   packages = with pkgs; [
     nodejs
-    rsync
+    git
     alejandra
   ];
 
@@ -13,8 +13,4 @@
       "^result$"
     ];
   };
-
-  enterShell = ''
-    cd pi && npm install
-  '';
 }
