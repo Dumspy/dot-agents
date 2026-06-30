@@ -25,10 +25,10 @@ describe("prettyDisplayName", () => {
 describe("buildProviderModels", () => {
 	it("deduplicates aliases and maps rich model info into pi provider models", () => {
 		const models = buildProviderModels(
-			[{ id: "claude-sonnet-4-6" }, { id: "anthropic.claude-sonnet-4-6" }],
+			[{ id: "claude-sonnet-4-5" }, { id: "anthropic.claude-sonnet-4-5" }],
 			[
 				{
-					model_name: "anthropic.claude-sonnet-4-6",
+					model_name: "anthropic.claude-sonnet-4-5",
 					model_info: {
 						supports_reasoning: true,
 						supports_function_calling: true,
@@ -46,8 +46,8 @@ describe("buildProviderModels", () => {
 
 		expect(models).toEqual([
 			{
-				id: "anthropic.claude-sonnet-4-6",
-				name: "Anthropic Claude Sonnet 4.6",
+				id: "anthropic.claude-sonnet-4-5",
+				name: "Anthropic Claude Sonnet 4.5",
 				reasoning: true,
 				input: ["text", "image"],
 				cost: {
@@ -111,6 +111,44 @@ describe("buildProviderModels", () => {
 		);
 
 		expect(models.map((model) => model.id)).toEqual(["okay-model"]);
+	});
+
+	it("disables reasoning for claude 4-series models that require adaptive thinking", () => {
+		const models = buildProviderModels(
+			[],
+			[
+				// opus 4.6, 4.7, 4.8 — all require adaptive thinking on Bedrock
+				{
+					model_name: "anthropic.claude-opus-4-6",
+					model_info: { mode: "chat", supports_reasoning: true, supports_function_calling: true },
+				},
+				{
+					model_name: "anthropic.claude-opus-4-7",
+					model_info: { mode: "chat", supports_reasoning: true, supports_function_calling: true },
+				},
+				{
+					model_name: "anthropic.claude-opus-4-8",
+					model_info: { mode: "chat", supports_reasoning: true, supports_function_calling: true },
+				},
+				// sonnet 4.6 — also requires adaptive thinking
+				{
+					model_name: "anthropic.claude-sonnet-4-6",
+					model_info: { mode: "chat", supports_reasoning: true, supports_function_calling: true },
+				},
+				// sonnet 4.5 — does NOT require adaptive thinking, reasoning passes through
+				{
+					model_name: "anthropic.claude-sonnet-4-5",
+					model_info: { mode: "chat", supports_reasoning: true, supports_function_calling: true },
+				},
+			],
+		);
+
+		const byId = Object.fromEntries(models.map((m) => [m.id, m]));
+		expect(byId["anthropic.claude-opus-4-6"]?.reasoning).toBe(false);
+		expect(byId["anthropic.claude-opus-4-7"]?.reasoning).toBe(false);
+		expect(byId["anthropic.claude-opus-4-8"]?.reasoning).toBe(false);
+		expect(byId["anthropic.claude-sonnet-4-6"]?.reasoning).toBe(false);
+		expect(byId["anthropic.claude-sonnet-4-5"]?.reasoning).toBe(true);
 	});
 
 	it("drops models with empty metadata since tool support is unknown", () => {

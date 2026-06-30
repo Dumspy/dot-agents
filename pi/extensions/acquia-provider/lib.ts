@@ -248,10 +248,19 @@ export function buildProviderModel(
 	const litellmName = modelInfo?.litellm_model_name ?? modelInfo?.key ?? "";
 	const isClaudeBacked = /claude/i.test(litellmName) || /claude/i.test(modelName);
 
+	// Claude 4-series models (claude-opus-4-6+, claude-sonnet-4-6, claude-fable-5, etc.) require
+	// Bedrock's `thinking.type: "adaptive"` format. The acquia gateway uses the openai-completions
+	// API via LiteLLM, which translates reasoning_effort to `thinking.type: "enabled"` — a format
+	// Bedrock rejects for these models. Disable reasoning for them so Pi never sends the thinking
+	// parameter through the gateway.
+	const requiresAdaptiveThinking = /claude[-.](?:opus[-.]4[-.](?:[6-9]|\d{2,})|sonnet[-.]4[-.](?:[6-9]|\d{2,})|fable[-.]\d)/i.test(litellmName)
+		|| /claude[-.](?:opus[-.]4[-.](?:[6-9]|\d{2,})|sonnet[-.]4[-.](?:[6-9]|\d{2,})|fable[-.]\d)/i.test(modelName);
+	const effectiveReasoning = requiresAdaptiveThinking ? false : supportsReasoning;
+
 	return {
 		id: modelName,
 		name: prettyDisplayName(modelName),
-		reasoning: supportsReasoning,
+		reasoning: effectiveReasoning,
 		input: supportsVision ? ["text", "image"] : ["text"],
 		cost: {
 			input: inputCost,
