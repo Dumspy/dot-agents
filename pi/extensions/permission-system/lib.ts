@@ -133,20 +133,34 @@ export const DEFAULT_CONFIG: PermissionsConfig = {
 			"**/.venv/**": "deny",
 			"**/venv/**": "deny",
 		},
+		// Bash: only `deny` is meaningful. The default sandbox (bubblewrap)
+		// owns general bash gating; these denies are curated global policy that
+		// survive across all tiers (bubblewrap, Gondolin, --no-sandbox) and
+		// catch system-altering commands bubblewrap cannot classify by intent.
+		// Per-repo `.pi/permissions.json` may add or refine denies; longest
+		// pattern wins, so a repo can allow a specific subcommand (e.g.
+		// `nixos-rebuild dry-*`) while keeping the broad deny.
 		bash: {
-			"*": "ask",
-			"ls*": "allow",
-			"pwd": "allow",
-			"git status*": "allow",
-			"git diff*": "allow",
-			"git log*": "allow",
-			"git branch*": "allow",
-			"rm -rf*": "deny",
 			"sudo*": "deny",
-			"eval*": "deny",
-			"source*": "deny",
+			"nixos-rebuild *": "deny",
+			"home-manager *": "deny",
+			"darwin-rebuild *": "deny",
+			"shutdown*": "deny",
+			"reboot*": "deny",
+			"poweroff*": "deny",
+			"halt*": "deny",
+			"mkfs*": "deny",
+			"dd *if=/dev/*": "deny",
+			"fdisk *": "deny",
+			"gdisk *": "deny",
+			"parted *": "deny",
+			"mount *": "deny",
+			"umount *": "deny",
+			"nvram *": "deny",
+			"systemctl reboot*": "deny",
+			"systemctl poweroff*": "deny",
+			"systemctl halt*": "deny",
 		},
-		webfetch: "ask",
 		external_directory: {
 			"**": "ask",
 		},

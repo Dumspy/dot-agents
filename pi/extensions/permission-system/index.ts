@@ -1,28 +1,35 @@
 /**
  * Permission System Extension for Pi
  *
- * Configurable permission gates for Pi tools (read, write, edit, bash, webfetch, etc.).
- * Shows a simple Yes/No/Explain prompt when a tool matches an "ask" rule.
+ * Policy gates for Pi tools (read, write, edit, bash, external_directory).
+ *
+ * Design: a sandbox extension (bubblewrap always-on, Gondolin via --sandbox)
+ * owns general bash and path-tool isolation at the OS layer. This extension
+ * owns *policy* on top: a credential/path deny list, per-repo bash denies
+ * (only `deny` is meaningful for bash; allow/ask/cloak are ignored so bash
+ * never prompts and subagents never hard-block), and the one surviving
+ * interactive prompt — `external_directory: ask` ("leaving the workspace?").
+ * webfetch is GET-only and is allowed by default (no rule). Bash sandboxing
+ * and credential un-mounting are handled by the sandbox extension, not here.
  * Supports secret masking ("cloak") for the read tool via regex patterns.
  *
  * Config files (merged, project takes precedence):
  * - ~/.pi/agent/permissions.json (global)
  * - <cwd>/.pi/permissions.json (project-local)
+ * - Schema: pi/extensions/permission-system/schema.json ($schema field)
  *
  * Example permissions.json:
  * {
+ *   "$schema": "https://raw.githubusercontent.com/Dumspy/dot-agents/main/pi/extensions/permission-system/schema.json",
  *   "rules": {
  *     "read": {
- *       "*": "allow",
+ *       "**": "allow",
  *       ".env": "cloak",
  *       ".ssh/**": "deny"
  *     },
  *     "bash": {
- *       "*": "ask",
- *       "ls*": "allow",
- *       "git status*": "allow"
+ *       "git push --force*": "deny"
  *     },
- *     "webfetch": "ask",
  *     "external_directory": {
  *       "**": "ask",
  *       "~/projects/personal/**": "allow"
@@ -88,7 +95,7 @@ function loadConfig(cwd: string): PermissionsConfig {
 	return deepMerge(deepMerge(DEFAULT_CONFIG, globalConfig), projectConfig);
 }
 
-const SYSTEM_PROMPT_NOTICE = `Permission system is active. Some paths and tools are denied by policy. If a tool call is blocked, stop and report the restriction to the user — never use bash or another tool as a workaround.`;
+const SYSTEM_PROMPT_NOTICE = `Bash runs sandboxed. Credential paths (~/.ssh, keys, .env) and paths outside the workspace are gated. If a tool call is blocked, stop and report the restriction to the user — never use another tool as a workaround.`;
 
 export default function permissionSystem(pi: ExtensionAPI) {
 	let config = DEFAULT_CONFIG;
@@ -170,8 +177,8 @@ export default function permissionSystem(pi: ExtensionAPI) {
 					if (!ctx.hasUI) {
 						return logAndBlock(
 							toolName, resolvedPath, ctx.cwd, "blocked-no-ui",
-							"external_directory ask (no UI)",
-							`External directory access required (no UI): ${toolName} \`${resolvedPath}\`.`,
+							"external_directory auto-deny (no UI)",
+							`External directory access is not available in non-interactive sessions. The agent is limited to the current workspace${toolName !== "bash" ? `: ${toolName} \`${resolvedPath}\`` : ""}.`,
 						);
 					}
 
@@ -217,6 +224,25 @@ export default function permissionSystem(pi: ExtensionAPI) {
 
 		const permission = resolvePermission(toolRules, value, toolName === "bash" ? { bash: true } : undefined);
 
+		// Bash: only `deny` is meaningful. The sandbox (bubblewrap/Gondolin)
+		// owns general bash gating; allow/ask/cloak are ignored so bash never
+		// prompts and subagents never hard-block on bash. Per-repo `bash.deny`
+		// is pure policy refinement that survives across all tiers including
+		// --no-sandbox (where the sandbox is unavailable and static-only runs).
+		if (toolName === "bash") {
+			if (permission === "deny") {
+				return logAndBlock(
+					toolName, value, ctx.cwd, "blocked",
+					"rule: deny",
+					`Permission denied by policy: bash \`${value}\`.`,
+				);
+			}
+			return logAndAllow(
+				toolName, value, ctx.cwd, "allowed",
+				permission === "allow" ? "rule: allow" : "bash: non-deny rule ignored (sandbox owns bash)",
+			);
+		}
+
 		if (permission === "allow") {
 			return logAndAllow(toolName, value, ctx.cwd, "allowed", "rule: allow");
 		}
@@ -233,7 +259,9 @@ export default function permissionSystem(pi: ExtensionAPI) {
 			);
 		}
 
-		// permission === "ask"
+		// permission === "ask" — only reachable for non-bash tools via explicit
+		// config (read/write/edit/webfetch have no `ask` defaults). Subagents
+		// (no UI) are blocked here; this is intentional for path/web tools.
 		if (!ctx.hasUI) {
 			return logAndBlock(
 				toolName, value, ctx.cwd, "blocked-no-ui",
@@ -249,25 +277,11 @@ export default function permissionSystem(pi: ExtensionAPI) {
 
 		const description = formatToolDescription(toolName, input);
 		const title = `Permission required\n\nThe agent wants to ${description}\n\nAllow this action?`;
-		const choice = await ctx.ui.select(title, ["Yes", "No", "Explain"]);
+		const choice = await ctx.ui.select(title, ["Yes", "No"]);
 
 		if (choice === "Yes") {
 			sessionApprovals.add(approvalKey);
 			return logAndAllow(toolName, value, ctx.cwd, "prompt-approved-session", "user approved session");
-		}
-
-		if (choice === "Explain") {
-			const explanationPrompt = `I see you want to ${description}. Can you explain why you need to do this before I approve it?`;
-			try {
-				pi.sendUserMessage(explanationPrompt, { deliverAs: "steer" });
-			} catch (e) {
-				console.error(`[permissions] Failed to send explanation request: ${e}`);
-			}
-			return logAndBlock(
-				toolName, value, ctx.cwd, "prompt-explained",
-				"user requested explanation",
-				"User requested explanation before approving.",
-			);
 		}
 
 		// "No" or cancelled

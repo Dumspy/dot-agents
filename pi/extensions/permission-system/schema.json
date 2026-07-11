@@ -1,0 +1,100 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://raw.githubusercontent.com/Dumspy/dot-agents/main/pi/extensions/permission-system/schema.json",
+	"title": "Pi Permissions Configuration",
+	"description": "Policy gates for Pi tools. The sandbox extension (bubblewrap always-on, Gondolin via --sandbox) owns general bash and path-tool isolation at the OS layer; this config owns policy on top. Files: ~/.pi/agent/permissions.json (global) and <cwd>/.pi/permissions.json (project-local), merged with project taking precedence.",
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"format": "uri-reference",
+			"description": "URL of this schema. Editors use it for validation/autocomplete."
+		},
+		"rules": {
+			"type": "object",
+			"description": "Per-tool permission rules. Each key is a tool name; the value is either a single permission string (applies to every call of that tool) or a glob-pattern object mapping patterns to permissions. Longest matching pattern wins. Files (platform) in path-based tools are resolved against the workspace cwd before matching; bash commands strip the git-interceptor env prefix first.",
+			"properties": {
+				"read": {
+					"$ref": "#/definitions/toolRules",
+					"description": "Read tool. Patterns match the resolved file path. `cloak` redacts via the matching `masks.read` entry instead of blocking; `deny` blocks the read entirely. Defaults: allow everything, cloak .env files, deny ~/.ssh/keys/.aws/.git/node_modules/venvs/build outputs."
+				},
+				"write": {
+					"$ref": "#/definitions/toolRules",
+					"description": "Write tool. Patterns match the resolved file path. Defaults: allow everything, deny .env/.git/node_modules/venvs."
+				},
+				"edit": {
+					"$ref": "#/definitions/toolRules",
+					"description": "Edit tool. Patterns match the resolved file path. Defaults mirror write."
+				},
+				"bash": {
+					"$ref": "#/definitions/toolRules",
+					"description": "Bash. Patterns match the command string (after stripping the git-interceptor env prefix). ONLY `deny` is effective under the sandbox tiers: allow/ask/cloak are ignored so bash never prompts and subagents (no UI) never hard-block. The sandbox (bubblewrap by default, Gondolin via --sandbox) owns general bash gating; bash rules here are pure policy refinement that survives across all tiers including --no-sandbox. Defaults: curated global denies (sudo, nixos-rebuild, home-manager, darwin-rebuild, shutdown, reboot, poweroff, halt, mkfs, dd if=/dev, fdisk, gdisk, parted, mount, umount, nvram, systemctl reboot/poweroff/halt). Per-repo `.pi/permissions.json` may refine these via longest-pattern-wins (e.g. allow `nixos-rebuild dry-*`)."
+				},
+				"external_directory": {
+					"$ref": "#/definitions/toolRules",
+					"description": "Gate for path-based tools (read/write/edit) reaching OUTSIDE the workspace. Patterns match the external directory root (the first directory above the workspace cwd, or the path root for different volumes). `ask` is the one surviving interactive prompt (Yes/No, no Explain); it auto-denies cleanly in non-interactive sessions (subagents). `allow` lets a sibling workspace be touched without prompting (e.g. `~/Documents/**`). Defaults: ask for everything outside the workspace."
+				},
+				"webfetch": {
+					"$ref": "#/definitions/toolRules",
+					"description": "Webfetch is GET-only (web-tools/network.ts hardcodes method: \"GET\") and has NO default rule, so it is allowed by absence. Setting rules here (e.g. `bash: ?`) only gates the URL string. For network containment use the sandbox tiers: bubblewrap network allow/deny-domains (always-on) or Gondolin VM network policy via --sandbox."
+				}
+			},
+			"additionalProperties": {
+				"$ref": "#/definitions/toolRules"
+			}
+		},
+		"masks": {
+			"type": "object",
+			"description": "Redaction patterns applied to read tool output when the matching `rules.read` entry resolves to `cloak`. A sandbox can only allow/deny; masking (show structure, hide values) is exclusive to this layer and survives both sandbox tiers.",
+			"additionalProperties": false,
+			"properties": {
+				"read": {
+					"type": "object",
+					"description": "Glob -> mask. Pattern matches the resolved file path.",
+					"patternProperties": {
+						".*": { "$ref": "#/definitions/maskPattern" }
+					}
+				}
+			}
+		}
+	},
+	"definitions": {
+		"permissionValue": {
+			"type": "string",
+			"enum": ["allow", "deny", "ask", "cloak"],
+			"description": "allow: proceed; deny: block with policy reason; ask: prompt Yes/No (auto-deny when no UI); cloak: proceed but redact via matching mask (read tool only)."
+		},
+		"toolRules": {
+			"oneOf": [
+				{ "$ref": "#/definitions/permissionValue" },
+				{
+					"type": "object",
+					"description": "Glob pattern -> permission. Longest matching pattern wins; ties resolve by insertion order. Patterns use picomatch (dot:true; bash commands also match `/`).",
+					"patternProperties": {
+						".*": { "$ref": "#/definitions/permissionValue" }
+					}
+				}
+			]
+		},
+		"maskPattern": {
+			"type": "object",
+			"required": ["pattern"],
+			"additionalProperties": false,
+			"properties": {
+				"pattern": {
+					"type": "string",
+					"description": "Regex pattern to match sensitive values in the read output."
+				},
+				"replace": {
+					"type": "string",
+					"description": "Replacement template (uses native JS replace semantics, e.g. \"$1\"). When omitted, matches are replaced with asterisks of equal length."
+				},
+				"flags": {
+					"type": "string",
+					"description": "Regex flags (e.g. \"g\", \"gi\"). Defaults to \"g\"."
+				}
+			}
+		}
+	}
+}

@@ -42,3 +42,25 @@ The tree mirrors the target paths under `$HOME`:
 
 `node_modules/` is gitignored and installed locally by `setup.sh` / the
 `post-merge` hook.
+
+## Sandbox system dependency (non-Nix)
+
+Pi ships an always-on bubblewrap sandbox for `bash` commands via the
+`pi/extensions/sandbox` extension (npm deps are installed by `setup.sh`).
+The `bwrap` *binary* is a host package, not a node module, so non-Nix users
+must install it themselves for the always-on default to engage. Without it,
+pi degrades loudly to the static permission layer (curated global bash denies
++ path deny list + `external_directory` ask still apply).
+
+| Platform | Install |
+| --- | --- |
+| macOS | (none) — `sandbox-exec` is built-in and used instead |
+| Debian/Ubuntu | `sudo apt install bubblewrap` |
+| Arch | `sudo pacman -S bubblewrap` |
+| Fedora | `sudo dnf install bubblewrap` |
+| Homebrew (Linux) | `brew install bubblewrap` |
+
+Escalation to the Gondolin micro-VM (`pi --sandbox`) additionally requires
+QEMU — install it manually only on machines where you intend to use that tier
+(e.g. `sudo apt install qemu-system-x86`). Node.js >= 23.6 is also required for
+`@earendil-works/gondolin` at runtime.

@@ -1,0 +1,67 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://raw.githubusercontent.com/Dumspy/dot-agents/main/pi/extensions/sandbox/schema.json",
+	"title": "Pi Sandbox Configuration (bubblewrap tier)",
+	"description": "Configuration for the always-on bubblewrap sandbox (bash only). File paths: ~/.pi/agent/extensions/sandbox.json (global) and <cwd>/.pi/sandbox.json (project-local), merged with project taking precedence. The Gondolin escalation tier has its own schema (sandbox-gondolin.json). Static (filesystem) and dynamic (network) sections are honored by @anthropic-ai/sandbox-runtime: bubblewrap on Linux, sandbox-exec on macOS.",
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"format": "uri-reference"
+		},
+		"enabled": {
+			"type": "boolean",
+			"default": true,
+			"description": "Master toggle for the always-on sandbox. When false, pi degrades loudly to the static permission layer (curated global bash denies + path deny list + external_directory ask still apply)."
+		},
+		"network": {
+			"type": "object",
+			"description": "Network egress policy. Connections to domains NOT in allowedDomains are blocked at the syscall layer (bubblewrap/seccomp).",
+			"additionalProperties": false,
+			"properties": {
+				"allowedDomains": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Domains that bash subprocesses may connect to. Wildcards supported (e.g. *.github.com). Defaults include npm/pypi registries and GitHub."
+				},
+				"deniedDomains": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Hard-denied domains, evaluated in addition to allowedDomains (deny wins)."
+				}
+			}
+		},
+		"filesystem": {
+			"type": "object",
+			"description": "Filesystem restrictions for bash subprocesses. Path tools (read/write/edit) are NOT covered by this tier — they run host-side and use the permission-system extension rules. Use --sandbox (Gondolin) for full-tool isolation.",
+			"additionalProperties": false,
+			"properties": {
+				"denyRead": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Host paths bash subprocesses may NOT read. ~ is expanded. Defaults: ~/.ssh, ~/.aws, ~/.gnupg."
+				},
+				"allowWrite": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Host paths bash subprocesses may write to. Defaults: . (workspace) and /tmp."
+				},
+				"denyWrite": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Glob patterns for paths bash subprocesses may NOT write even if inside allowWrite. Defaults: .env, .env.*, *.pem, *.key."
+				}
+			}
+		},
+		"ignoreViolations": {
+			"type": "object",
+			"description": "sandbox-runtime advanced field: per-process ignore lists for violation logging.",
+			"additionalProperties": { "type": "array", "items": { "type": "string" } }
+		},
+		"enableWeakerNestedSandbox": {
+			"type": "boolean",
+			"description": "sandbox-runtime advanced field: relax constraints when running inside an existing sandbox/container (use only if you understand the implications)."
+		}
+	}
+}

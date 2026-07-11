@@ -484,36 +484,43 @@ describe("DEFAULT_CONFIG — intended behavior", () => {
 		});
 	});
 
-	describe("bash — ask by default, allow on safe commands, deny dangerous ones", () => {
-		it("allows ls commands", () => {
-			expect(resolvePermission(bashRules, "ls -la", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "ls", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "ls src/components", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "ls -la .github/workflows/", { bash: true })).toBe("allow");
-		});
-
-		it("allows pwd", () => {
-			expect(resolvePermission(bashRules, "pwd", { bash: true })).toBe("allow");
-		});
-
-		it("allows safe git read-only commands", () => {
-			expect(resolvePermission(bashRules, "git status", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "git status -s", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "git diff", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "git log --oneline", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "git branch", { bash: true })).toBe("allow");
-			expect(resolvePermission(bashRules, "git diff .github/workflows/ci.yml", { bash: true })).toBe("allow");
-		});
-
-		it("denies dangerous commands", () => {
-			expect(resolvePermission(bashRules, "rm -rf node_modules", { bash: true })).toBe("deny");
-			expect(resolvePermission(bashRules, "rm -rf /", { bash: true })).toBe("deny");
+	describe("bash — curated global denies only; sandbox owns the rest", () => {
+		it("denies system-altering commands bubblewrap cannot classify by intent", () => {
 			expect(resolvePermission(bashRules, "sudo apt-get update", { bash: true })).toBe("deny");
-			expect(resolvePermission(bashRules, "eval rm -rf node_modules", { bash: true })).toBe("deny");
-			expect(resolvePermission(bashRules, "source .env", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "sudo -i", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "nixos-rebuild switch", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "home-manager switch", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "darwin-rebuild switch --flake .", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "shutdown -h now", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "reboot", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "poweroff", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "halt", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "mkfs.ext4 /dev/sda1", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "dd if=/dev/zero of=/dev/sda", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "fdisk /dev/sda", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "gdisk /dev/sda", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "parted /dev/sda mklabel gpt", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "mount /dev/sda1 /mnt", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "umount /mnt", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "nvram -x", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "systemctl reboot", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "systemctl poweroff", { bash: true })).toBe("deny");
+			expect(resolvePermission(bashRules, "systemctl halt", { bash: true })).toBe("deny");
 		});
 
-		it("falls through to ask for everything else", () => {
+		it("falls through to ask (default) for ordinary commands — the index.ts handler treats non-deny as allow for bash so the sandbox owns them", () => {
+			// resolvePermission returns "ask" when no pattern matches. The
+			// index.ts bash branch ignores ask/allow/cloak and lets the sandbox
+			// (bubblewrap/Gondolin) gate the command. So these effectively run
+			// without a static prompt under the always-on tier.
+			expect(resolvePermission(bashRules, "ls -la", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "pwd", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "git status", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "git diff", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "git log --oneline", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "rm -rf node_modules", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "eval rm -rf node_modules", { bash: true })).toBe("ask");
+			expect(resolvePermission(bashRules, "source .env", { bash: true })).toBe("ask");
 			expect(resolvePermission(bashRules, "curl example.com", { bash: true })).toBe("ask");
 			expect(resolvePermission(bashRules, "npm run build", { bash: true })).toBe("ask");
 			expect(resolvePermission(bashRules, "cargo test", { bash: true })).toBe("ask");
@@ -522,21 +529,32 @@ describe("DEFAULT_CONFIG — intended behavior", () => {
 			expect(resolvePermission(bashRules, "npx some-package", { bash: true })).toBe("ask");
 		});
 
-		it("does not cache denials — repeated commands still resolve to ask", () => {
-			// The permission rule engine is stateless. If a user denies a command
-			// in the UI, the next attempt for the same command must re-prompt.
+		it("is stateless — repeated commands resolve identically", () => {
 			expect(resolvePermission(bashRules, "npm test", { bash: true })).toBe("ask");
 			expect(resolvePermission(bashRules, "npm test", { bash: true })).toBe("ask");
 			expect(resolvePermission(bashRules, "make build", { bash: true })).toBe("ask");
 			expect(resolvePermission(bashRules, "make build", { bash: true })).toBe("ask");
 		});
+
+		it("supports per-repo override via longest-pattern-wins", () => {
+			// A repo may add `.pi/permissions.json` with `bash: { "nixos-rebuild dry-*": "allow" }`.
+			// deepMerge merges it in; longest match wins, so the specific allow
+			// overrides the broad global `nixos-rebuild *` deny.
+			const merged = deepMerge(DEFAULT_CONFIG, {
+				rules: { bash: { "nixos-rebuild dry-*": "allow" } },
+			});
+			const mergedBash = merged.rules.bash as Record<string, string>;
+			expect(resolvePermission(mergedBash, "nixos-rebuild dry-build", { bash: true })).toBe("allow");
+			expect(resolvePermission(mergedBash, "nixos-rebuild switch", { bash: true })).toBe("deny");
+		});
 	});
 
-	describe("webfetch — ask by default", () => {
-		it("asks for any URL", () => {
-			expect(webfetchRule).toBe("ask");
-			expect(resolvePermission(webfetchRule, "https://example.com")).toBe("ask");
-			expect(resolvePermission(webfetchRule, "http://localhost")).toBe("ask");
+	describe("webfetch — no default rule (allowed; GET-only)", () => {
+		it("has no default rule in DEFAULT_CONFIG (allowed via absence)", () => {
+			expect(webfetchRule).toBeUndefined();
+			// index.ts: `toolRules === undefined` → logAndAllow. webfetch is
+			// GET-only (web-tools/network.ts hardcodes method: "GET"), so an
+			// allow is safe; `--sandbox` Gondolin adds VM network policy.
 		});
 	});
 });

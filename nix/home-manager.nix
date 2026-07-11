@@ -172,6 +172,32 @@ in {
           Pi-specific extensions to install to ~/.pi/agent/extensions/.
           Set to `null` to auto-discover all extensions in pi/extensions/.
           Set to `[]` to disable extensions.
+
+          When `cfg.pi.sandbox` is false and this is null, the `sandbox`
+          extension is filtered out of auto-discovery. Listing `sandbox`
+          explicitly here overrides that filter.
+        '';
+      };
+
+      sandbox = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Always-on bubblewrap sandbox for pi bash commands. When true
+          (default): adds pkgs.bubblewrap to home.packages on Linux and
+          includes the pi/extensions/sandbox extension in auto-discovery.
+          On macOS, sandbox-exec is built-in so no system package is added.
+
+          When false: the sandbox extension is excluded from auto-discovery
+          and bubblewrap is not installed; pi degrades loudly to the static
+          permission-system layer (curated global bash denies + path deny
+          list + external_directory ask).
+
+          Gondolin micro-VM escalation (`pi --sandbox`) requires QEMU,
+          which is NOT pulled by this module. Install qemu manually on
+          machines where you intend to use the escalation tier.
+
+          Users can also exclude the sandbox via the `extensions` option.
         '';
       };
 
@@ -295,6 +321,9 @@ in {
         message = "dot-agents: unknown pi theme(s) requested: ${lib.concatStringsSep ", " missingPiThemes}. Available: ${lib.concatStringsSep ", " piThemeNames}";
       }
     ];
+
+    # Always-on bubblewrap sandbox binary (Linux only — macOS uses sandbox-exec).
+    home.packages = lib.optional (cfg.pi.sandbox && pkgs.stdenv.isLinux) pkgs.bubblewrap;
 
     # --- home.file ---
     home.file = lib.mkMerge [
