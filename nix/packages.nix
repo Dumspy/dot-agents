@@ -3,7 +3,8 @@
   lib,
   externalSources,
 }: let
-  registry = import ./skills.nix {inherit externalSources;};
+  skillRegistry = import ./skills.nix {inherit externalSources;};
+  piExtRegistry = import ./pi-external-extensions.nix;
 
   # Build a single skill derivation.
   # For simple markdown-only skills we use runCommand.
@@ -22,6 +23,21 @@
       mkdir -p $out/share/skills
       cp -r ${path} $out/share/skills/${name}
     '';
+
+  # Build a single external Pi npm package.
+  mkPiNpmPackage = name: spec:
+    pkgs.callPackage ./build-pi-npm-package.nix {
+      packageName = spec.package;
+      version = spec.version;
+      hash = spec.hash;
+      npmDepsHash = spec.npmDepsHash;
+    };
+
+  skillPackages = lib.mapAttrs mkSkillPackage skillRegistry;
+
+  # Only build npm-type external extensions (skip non-npm in future)
+  npmExts = lib.filterAttrs (_: spec: spec.type == "npm") piExtRegistry;
+  extPackages = lib.mapAttrs mkPiNpmPackage npmExts;
 in
-  # Build all skills as named packages
-  lib.mapAttrs mkSkillPackage registry
+  # Merge skill and extension packages into one attrset
+  skillPackages // extPackages

@@ -8,9 +8,9 @@ This repository is the canonical source for all agent configuration.
 |-----------|---------|
 | `skills/` | Universal agent skills (discovered by Pi, OpenCode, and future agents) |
 | `opencode/agents/` | OpenCode subagent definitions |
-| `pi/` | Pi-specific extensions, skills, and permissions |
+| `pi/` | Pi-specific extensions, skills, themes, and permissions |
 | `opencode/` | OpenCode-specific skills, commands, and extensions |
-| `nix/` | Nix flake, packages, and Home Manager modules |
+| `nix/` | Nix flake, packages, Home Manager modules, and external extension registry |
 
 ## Installation targets
 

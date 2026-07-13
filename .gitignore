@@ -18,3 +18,7 @@ node_modules
 
 # direnv
 .direnv
+.devenv
+
+# pi agent local state
+.pi/
