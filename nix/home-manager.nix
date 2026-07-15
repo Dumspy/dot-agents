@@ -83,6 +83,10 @@
     packages = externalExtSettingsPackages;
   };
 
+  # All registry package names (for cleanup of previously-enabled packages)
+  allRegistryPackages = map (name: piExternalExtRegistry.${name}.package) allExternalExtNames;
+  allRegistryPackagesJson = builtins.toJSON allRegistryPackages;
+
   piExtensionsBundle =
     pkgs.runCommand "dot-agents-pi-extensions-bundle" {
       preferLocalBuild = true;
@@ -434,19 +438,27 @@ in {
         "install-dot-agents-pi-extensions" =
           mkRsyncActivation piExtensionsBundle "${config.home.homeDirectory}/.pi/agent/extensions" cfg.structure;
       })
-      # Merge our external packages into Pi's settings.json (additive only).
-      (lib.mkIf (enabledExternalExts != []) {
+      # Sync registry-managed packages into Pi's settings.json.
+      # Adds enabled packages, removes disabled ones, preserves user-installed packages.
+      (lib.mkIf (enabledExternalExts != [] || cfg.pi.externalExtensions != null) {
         "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
           export PATH="${pkgs.jq}/bin:$PATH"
           SETTINGS="${config.home.homeDirectory}/.pi/agent/settings.json"
+          REGISTRY_PACKAGES='${allRegistryPackagesJson}'
           OUR_PACKAGES='${externalExtSettingsJson}'
 
           mkdir -p "$(dirname "$SETTINGS")"
 
           if [ -f "$SETTINGS" ]; then
-            # Merge: add our packages, keep existing, deduplicate
-            jq -s '.[0] as $ours | .[1] | .packages = (([$ours.packages[]] + (.packages // [])) | unique)' \
-              <(echo "$OUR_PACKAGES") "$SETTINGS" > "$SETTINGS.tmp"
+            jq --argjson registry "$REGISTRY_PACKAGES" --argjson ours "$OUR_PACKAGES" \
+              '. as $s |
+               $s + {
+                 packages: (
+                   (($s.packages // []) | map(select(. as $pkg | $registry | index($pkg) | not))) +
+                   $ours.packages
+                 ) | unique
+               }' \
+              "$SETTINGS" > "$SETTINGS.tmp"
             mv "$SETTINGS.tmp" "$SETTINGS"
           else
             echo "$OUR_PACKAGES" > "$SETTINGS"
