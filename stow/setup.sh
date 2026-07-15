@@ -2,9 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# External Pi extensions to install.
-# Maps to entries in nix/pi-external-extensions.nix.
-# Add new entries here when adding to the registry.
+# Must stay in sync with nix/pi-external-extensions.nix.
 EXTERNAL_PI_PACKAGES=(
   "pi-mcp-adapter"
 )
@@ -25,7 +23,6 @@ fi
 
 # Reinstall external Pi extensions (if pi CLI is available)
 if command -v pi &> /dev/null; then
-  # External packages list — keep in sync with nix/pi-external-extensions.nix
   EXTERNAL_PI_PACKAGES=("pi-mcp-adapter")
   for pkg in "${EXTERNAL_PI_PACKAGES[@]}"; do
     echo "[dot-agents] Installing Pi extension: $pkg"

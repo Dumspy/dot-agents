@@ -91,35 +91,10 @@ development** and is not shipped to dependants.
 
 ## External Extensions
 
-In addition to local TypeScript extensions in this directory, dot-agents supports
-external Pi extensions — third-party npm packages that Pi loads via its package
-manager (`~/.pi/agent/settings.json` → `packages` array).
-
-The registry at `nix/pi-external-extensions.nix` is the single source of truth.
-Each entry specifies the npm package name, version, and hashes for reproducible builds.
-
-### How Pi discovers them
-
-1. Pi reads `~/.pi/agent/settings.json` → `"packages": ["pi-mcp-adapter"]`
-2. Looks for the package in `~/.pi/agent/npm/<name>/`
-3. Reads `package.json` → `pi.extensions` → loads the entry point
-
-### Nix
-
-Packages are pre-built as fixed-output derivations and deployed to
-`~/.pi/agent/npm/<name>/`. The `settings.json` packages array is merged
-via activation script (additive only — never removes user-installed packages).
-
-### Non-Nix (stow)
-
-The stow branch ships a `settings.json` with the packages array.
-`setup.sh` runs `pi install npm:<name>` for each if `pi` is available.
-
-### Adding a new external extension
-
-1. Add entry to `nix/pi-external-extensions.nix`
-2. Get hashes: tarball via `nix-prefetch-url`, deps via trial build
-3. The extension auto-deploys via both Nix and stow
+Third-party npm extensions are listed in `nix/pi-external-extensions.nix`.
+Pi discovers them via `settings.json` → `packages` and loads them from
+`~/.pi/agent/npm/<name>/`. See README.md for the full architecture and
+step-by-step guide for adding new ones.
 
 ## Permission System Extension
 

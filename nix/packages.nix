@@ -35,7 +35,6 @@
 
   skillPackages = lib.mapAttrs mkSkillPackage skillRegistry;
 
-  # Only build npm-type external extensions (skip non-npm in future)
   npmExts = lib.filterAttrs (_: spec: spec.type == "npm") piExtRegistry;
   extPackages = lib.mapAttrs mkPiNpmPackage npmExts;
 in

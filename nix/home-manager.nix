@@ -65,7 +65,7 @@
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
 
-  # --- Auto-discover external pi extensions (from npm) ---
+  # --- External Pi extensions (npm) ---
   allExternalExtNames = builtins.attrNames piExternalExtRegistry;
   enabledExternalExts =
     if cfg.pi.externalExtensions == null
@@ -73,15 +73,12 @@
     else cfg.pi.externalExtensions;
   missingExternalExts = lib.filter (name: !lib.elem name allExternalExtNames) enabledExternalExts;
 
-  # Map of ext name -> Nix derivation (pre-built npm package with node_modules)
   externalExtPkgs = lib.genAttrs enabledExternalExts (
     name: self.packages.${pkgs.stdenv.hostPlatform.system}.${name}
   );
 
-  # The packages array we contribute to Pi's settings.json
   externalExtSettingsPackages = map (name: piExternalExtRegistry.${name}.package) enabledExternalExts;
 
-  # JSON fragment for settings.json merge
   externalExtSettingsJson = builtins.toJSON {
     packages = externalExtSettingsPackages;
   };
@@ -405,7 +402,6 @@ in {
           })
           enabledPiThemes)
       ))
-      # External Pi npm packages (pre-built, Pi discovers via settings.json packages)
       (lib.mkIf (enabledExternalExts != []) (
         lib.listToAttrs (map (name: {
             name = ".pi/agent/npm/${piExternalExtRegistry.${name}.package}";
@@ -438,9 +434,7 @@ in {
         "install-dot-agents-pi-extensions" =
           mkRsyncActivation piExtensionsBundle "${config.home.homeDirectory}/.pi/agent/extensions" cfg.structure;
       })
-      # Merge external extension packages into Pi's settings.json.
-      # Pi manages settings.json itself (user edits via /settings, pi install, etc.),
-      # so we only add our packages without removing user-installed ones.
+      # Merge our external packages into Pi's settings.json (additive only).
       (lib.mkIf (enabledExternalExts != []) {
         "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
           export PATH="${pkgs.jq}/bin:$PATH"
@@ -455,7 +449,6 @@ in {
               <(echo "$OUR_PACKAGES") "$SETTINGS" > "$SETTINGS.tmp"
             mv "$SETTINGS.tmp" "$SETTINGS"
           else
-            # Fresh install: write our config
             echo "$OUR_PACKAGES" > "$SETTINGS"
           fi
 
