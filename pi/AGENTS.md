@@ -93,7 +93,7 @@ development** and is not shipped to dependants.
 
 Third-party npm extensions are listed in `nix/pi-external-extensions.nix`.
 Pi discovers them via `settings.json` → `packages` and loads them from
-`~/.pi/agent/npm/<name>/`. See README.md for the full architecture and
+`~/.pi/agent/npm/node_modules/<name>/`. See README.md for the full architecture and
 step-by-step guide for adding new ones.
 
 ## Permission System Extension

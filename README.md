@@ -15,7 +15,7 @@ Universal agent configuration for Pi, OpenCode, and future AI coding agents.
 | `opencode/skills/` | OpenCode-specific skills | `~/.config/opencode/skills/` |
 | `opencode/commands/` | OpenCode commands | `~/.config/opencode/commands/` |
 | `opencode/extensions/` | OpenCode extensions | agent-specific |
-| `nix/pi-external-extensions.nix` | External Pi extension registry | `~/.pi/agent/npm/<name>/` + settings.json |
+| `nix/pi-external-extensions.nix` | External Pi extension registry | `~/.pi/agent/npm/node_modules/<name>/` + settings.json |
 
 ## Nix (Home Manager)
 
@@ -227,7 +227,7 @@ Pi discovers external extensions through `settings.json` → `packages`:
 }
 ```
 
-Pi resolves packages from `~/.pi/agent/npm/<name>/` (global) or `.pi/npm/<name>/`
+Pi resolves packages from `~/.pi/agent/npm/node_modules/<name>/` (global) or `.pi/npm/node_modules/<name>/`
 (project). Each package declares its extension entry point in its `package.json`
 under the `pi.extensions` field.
 
@@ -236,7 +236,7 @@ under the `pi.extensions` field.
 ```
 nix/pi-external-extensions.nix    ← single source of truth (registry)
   ├── Nix: packages.nix builds each npm package as a fixed-output derivation
-  │         home-manager.nix deploys to ~/.pi/agent/npm/<name>/
+  │         home-manager.nix deploys to ~/.pi/agent/npm/node_modules/<name>/
   │         + merges packages into ~/.pi/agent/settings.json
   └── Stow: stow-tree.nix includes a settings.json with packages array
             setup.sh runs `pi install npm:<name>` if pi CLI is available
@@ -324,7 +324,7 @@ Also add it to the array inside the post-merge hook in the same file.
 
 **Step 5 — Verify**
 
-Nix: after Home Manager rebuild, the extension is in `~/.pi/agent/npm/<name>/`
+Nix: after Home Manager rebuild, the extension is in `~/.pi/agent/npm/node_modules/<name>/`
 and listed in `~/.pi/agent/settings.json`. Start Pi and confirm the extension
 loads via `/mcp` (for pi-mcp-adapter) or the extension's own commands.
 

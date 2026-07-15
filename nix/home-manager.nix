@@ -262,7 +262,7 @@ in {
         default = [];
         description = ''
           External Pi extensions to install from npm, deployed to
-          ~/.pi/agent/npm/<name>/ and registered in settings.json.
+          ~/.pi/agent/npm/node_modules/<name>/ and registered in settings.json.
           Set to `null` to auto-discover all from the registry.
           Set to `[]` to disable external extensions (default).
         '';
@@ -408,7 +408,7 @@ in {
       ))
       (lib.mkIf (enabledExternalExts != []) (
         lib.listToAttrs (map (name: {
-            name = ".pi/agent/npm/${piExternalExtRegistry.${name}.package}";
+            name = ".pi/agent/npm/node_modules/${piExternalExtRegistry.${name}.package}";
             value.source = "${externalExtPkgs.${name}}";
           })
           enabledExternalExts)
