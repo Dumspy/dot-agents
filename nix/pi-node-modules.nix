@@ -40,7 +40,7 @@ in
     # Run: nix build --impure --expr 'let pkgs = import <nixpkgs> {}; in pkgs.callPackage ./nix/pi-node-modules.nix {}' --rebuild 2>&1 | grep 'got:'
     outputHash =
       {
-        x86_64-linux = "sha256-ZWX90Z2GsRiIJkxfgX7UBzsX8kZbGTUBQad6ZezuWJo=";
+        x86_64-linux = "sha256-jDhJS8zHgqHCetl7R2wz0r7I7wioDSwD51x32x29Q3M=";
         aarch64-darwin = "sha256-ewRP/st5vixYf2ShHbK/gXoJakZvh7UhzRt9+CV7+Cw=";
         aarch64-linux = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
         x86_64-darwin = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
