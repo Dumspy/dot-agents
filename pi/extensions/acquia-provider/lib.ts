@@ -261,7 +261,14 @@ export function buildProviderModel(
 		},
 		contextWindow: contextWindow ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
-		...(isClaudeBacked ? { compat: { cacheControlFormat: "anthropic" as const } } : {}),
+		...(isClaudeBacked
+			? {
+				compat: {
+					cacheControlFormat: "anthropic" as const,
+					supportsStrictMode: false,
+				},
+			}
+			: {}),
 	};
 }
 
