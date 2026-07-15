@@ -51,6 +51,7 @@ import {
 	getExternalDirectoryRoot,
 	getToolValue,
 	hardStop,
+	isSkillMarkdownPath,
 	resolvePermission,
 	resolveToolPath,
 	shouldMask,
@@ -172,6 +173,11 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		// --- External directory gate ---
 		const resolvedPath = resolveToolPath(toolName, input, ctx.cwd);
 		if (resolvedPath) {
+			// Reading markdown files from known skill directories is always allowed
+			if (toolName === "read" && isSkillMarkdownPath(resolvedPath)) {
+				return logAndAllow(toolName, value, ctx.cwd, "allowed", "skill markdown read");
+			}
+
 			const extDirRoot = getExternalDirectoryRoot(resolvedPath, ctx.cwd);
 			if (extDirRoot) {
 				const extPermission = resolvePermission(config.rules.external_directory, extDirRoot);
