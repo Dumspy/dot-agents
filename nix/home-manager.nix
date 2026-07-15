@@ -77,14 +77,15 @@
     name: self.packages.${pkgs.stdenv.hostPlatform.system}.${name}
   );
 
-  externalExtSettingsPackages = map (name: piExternalExtRegistry.${name}.package) enabledExternalExts;
+  # The packages array we contribute to Pi's settings.json (with npm: prefix)
+  externalExtSettingsPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") enabledExternalExts;
 
   externalExtSettingsJson = builtins.toJSON {
     packages = externalExtSettingsPackages;
   };
 
   # All registry package names (for cleanup of previously-enabled packages)
-  allRegistryPackages = map (name: piExternalExtRegistry.${name}.package) allExternalExtNames;
+  allRegistryPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") allExternalExtNames;
   allRegistryPackagesJson = builtins.toJSON allRegistryPackages;
 
   piExtensionsBundle =
