@@ -25,7 +25,8 @@
   # https://pi.dev/packages/pi-mcp-adapter
   # https://github.com/nicobailon/pi-mcp-adapter
   #
-  # To update: bump version, fetch new tarball hash, rebuild npm deps hash.
+  # To update: bump version, fetch new tarball hash, set npmDepsHash to
+  # lib.fakeSha256, rebuild, and copy the 'got:' hash from the error.
   "pi-mcp-adapter" = {
     type = "npm";
     package = "pi-mcp-adapter";
@@ -33,9 +34,8 @@
     description = "Use MCP servers with Pi — one proxy tool instead of hundreds";
     # Tarball hash (SRI). Get with: nix-prefetch-url https://registry.npmjs.org/pi-mcp-adapter/-/pi-mcp-adapter-2.11.0.tgz
     hash = "sha256-fUVwNzZAxIpHK9HqbT+x9FEp3ZPGmi6//2dX4eEN0lk=";
-    # node_modules hash (SRI). The build uses the vendored
-    # nix/locks/pi-mcp-adapter-2.11.0.package-lock.json so this is stable
-    # across rebuilds regardless of upstream registry churn.
-    npmDepsHash = "sha256-YClQruLFcVox2YyRVHfGwu+ROJqDHGMc/+wZ5jPQvYg=";
+    # Installed output hash (SRI). Set to lib.fakeSha256, build, use 'got:' from error.
+    # This may shift when transitive deps publish new patches — one-line fix.
+    npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   };
 }

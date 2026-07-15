@@ -31,7 +31,6 @@
       version = spec.version;
       hash = spec.hash;
       npmDepsHash = spec.npmDepsHash;
-      lockfile = ./locks/${spec.package}-${spec.version}.package-lock.json;
     };
 
   skillPackages = lib.mapAttrs mkSkillPackage skillRegistry;
