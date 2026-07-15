@@ -85,7 +85,16 @@ npm install some-lib --workspace=extensions/advanced-ext
 
 ## Nix Integration
 
-The Home Manager module installs extensions to `~/.pi/agent/extensions/` for end users. The workspace root (`package.json`, `tsconfig.json`, `node_modules`) is **only for local development** and is not shipped to dependants.
+The Home Manager module installs extensions to `~/.pi/agent/extensions/` for end users.
+The workspace root (`package.json`, `tsconfig.json`, `node_modules`) is **only for local
+development** and is not shipped to dependants.
+
+## External Extensions
+
+Third-party npm extensions are listed in `nix/pi-external-extensions.nix`.
+Pi discovers them via `settings.json` → `packages` and loads them from
+`~/.pi/agent/npm/node_modules/<name>/`. See README.md for the full architecture and
+step-by-step guide for adding new ones.
 
 ## Permission System Extension
 

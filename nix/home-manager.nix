@@ -14,6 +14,8 @@
   registry = import ./skills.nix {inherit externalSources;};
   allSkillNames = builtins.attrNames registry;
 
+  piExternalExtRegistry = import ./pi-external-extensions.nix;
+
   # --- Auto-discover agents ---
   agentsDir = ../opencode/agents;
   agentFiles =
@@ -62,6 +64,29 @@
 
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
+
+  # --- External Pi extensions (npm) ---
+  allExternalExtNames = builtins.attrNames piExternalExtRegistry;
+  enabledExternalExts =
+    if cfg.pi.externalExtensions == null
+    then allExternalExtNames
+    else cfg.pi.externalExtensions;
+  missingExternalExts = lib.filter (name: !lib.elem name allExternalExtNames) enabledExternalExts;
+
+  externalExtPkgs = lib.genAttrs enabledExternalExts (
+    name: self.packages.${pkgs.stdenv.hostPlatform.system}.${name}
+  );
+
+  # The packages array we contribute to Pi's settings.json (with npm: prefix)
+  externalExtSettingsPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") enabledExternalExts;
+
+  externalExtSettingsJson = builtins.toJSON {
+    packages = externalExtSettingsPackages;
+  };
+
+  # All registry package names (for cleanup of previously-enabled packages)
+  allRegistryPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") allExternalExtNames;
+  allRegistryPackagesJson = builtins.toJSON allRegistryPackages;
 
   piExtensionsBundle =
     pkgs.runCommand "dot-agents-pi-extensions-bundle" {
@@ -233,6 +258,17 @@ in {
         '';
       };
 
+      externalExtensions = lib.mkOption {
+        type = lib.types.nullOr (lib.types.listOf lib.types.str);
+        default = [];
+        description = ''
+          External Pi extensions to install from npm, deployed to
+          ~/.pi/agent/npm/node_modules/<name>/ and registered in settings.json.
+          Set to `null` to auto-discover all from the registry.
+          Set to `[]` to disable external extensions (default).
+        '';
+      };
+
       themes = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
         default = null;
@@ -294,6 +330,10 @@ in {
         assertion = missingPiThemes == [];
         message = "dot-agents: unknown pi theme(s) requested: ${lib.concatStringsSep ", " missingPiThemes}. Available: ${lib.concatStringsSep ", " piThemeNames}";
       }
+      {
+        assertion = missingExternalExts == [];
+        message = "dot-agents: unknown external pi extension(s) requested: ${lib.concatStringsSep ", " missingExternalExts}. Available: ${lib.concatStringsSep ", " allExternalExtNames}";
+      }
     ];
 
     # --- home.file ---
@@ -346,8 +386,8 @@ in {
       (lib.mkIf (cfg.structure == "link" && enabledPiExtensions != []) {
         ".pi/agent/extensions".source = piExtensionsBundle;
       })
-      # Pi extension runtime dependencies
-      (lib.mkIf (enabledPiExtensions != []) {
+      # Pi extension runtime dependencies (deploy if any local or external extensions enabled)
+      (lib.mkIf (enabledPiExtensions != [] || enabledExternalExts != []) {
         ".pi/agent/package.json".source = piDir + "/package.json";
         ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
@@ -366,6 +406,13 @@ in {
             value.source = "${piThemesDir}/${name}.json";
           })
           enabledPiThemes)
+      ))
+      (lib.mkIf (enabledExternalExts != []) (
+        lib.listToAttrs (map (name: {
+            name = ".pi/agent/npm/node_modules/${piExternalExtRegistry.${name}.package}";
+            value.source = "${externalExtPkgs.${name}}";
+          })
+          enabledExternalExts)
       ))
     ];
 
@@ -391,6 +438,35 @@ in {
       (lib.mkIf (cfg.structure != "link" && enabledPiExtensions != []) {
         "install-dot-agents-pi-extensions" =
           mkRsyncActivation piExtensionsBundle "${config.home.homeDirectory}/.pi/agent/extensions" cfg.structure;
+      })
+      # Sync registry-managed packages into Pi's settings.json.
+      # Adds enabled packages, removes disabled ones, preserves user-installed packages.
+      (lib.mkIf (enabledExternalExts != [] || cfg.pi.externalExtensions != null) {
+        "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          export PATH="${pkgs.jq}/bin:$PATH"
+          SETTINGS="${config.home.homeDirectory}/.pi/agent/settings.json"
+          REGISTRY_PACKAGES='${allRegistryPackagesJson}'
+          OUR_PACKAGES='${externalExtSettingsJson}'
+
+          mkdir -p "$(dirname "$SETTINGS")"
+
+          if [ -f "$SETTINGS" ]; then
+            jq --argjson registry "$REGISTRY_PACKAGES" --argjson ours "$OUR_PACKAGES" \
+              '. as $s |
+               $s + {
+                 packages: (
+                   (($s.packages // []) | map(select(. as $pkg | $registry | index($pkg) | not))) +
+                   $ours.packages
+                 ) | unique
+               }' \
+              "$SETTINGS" > "$SETTINGS.tmp"
+            mv "$SETTINGS.tmp" "$SETTINGS"
+          else
+            echo "$OUR_PACKAGES" > "$SETTINGS"
+          fi
+
+          chmod 644 "$SETTINGS"
+        '';
       })
     ];
   };

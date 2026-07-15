@@ -15,6 +15,7 @@ Universal agent configuration for Pi, OpenCode, and future AI coding agents.
 | `opencode/skills/` | OpenCode-specific skills | `~/.config/opencode/skills/` |
 | `opencode/commands/` | OpenCode commands | `~/.config/opencode/commands/` |
 | `opencode/extensions/` | OpenCode extensions | agent-specific |
+| `nix/pi-external-extensions.nix` | External Pi extension registry | `~/.pi/agent/npm/node_modules/<name>/` + settings.json |
 
 ## Nix (Home Manager)
 
@@ -207,6 +208,138 @@ Copy `pi/extensions/permission-system.ts` to `~/.pi/agent/extensions/` and creat
 ```
 
 Rules and masks are merged with project-local `.pi/permissions.json` (project takes precedence).
+
+## External Pi Extensions
+
+In addition to local extensions in `pi/extensions/`, dot-agents supports external
+Pi extensions — third-party npm packages that Pi loads via its package manager.
+
+The registry at `nix/pi-external-extensions.nix` is the single source of truth
+for which external extensions are available.
+
+### How it works
+
+Pi discovers external extensions through `settings.json` → `packages`:
+
+```json
+{
+  "packages": ["pi-mcp-adapter"]
+}
+```
+
+Pi resolves packages from `~/.pi/agent/npm/node_modules/<name>/` (global) or `.pi/npm/node_modules/<name>/`
+(project). Each package declares its extension entry point in its `package.json`
+under the `pi.extensions` field.
+
+### Architecture
+
+```
+nix/pi-external-extensions.nix    ← single source of truth (registry)
+  ├── Nix: packages.nix builds each npm package as a fixed-output derivation
+  │         home-manager.nix deploys to ~/.pi/agent/npm/node_modules/<name>/
+  │         + merges packages into ~/.pi/agent/settings.json
+  └── Stow: stow-tree.nix includes a settings.json with packages array
+            setup.sh runs `pi install npm:<name>` if pi CLI is available
+```
+
+Both paths are reproducible:
+- **Nix**: fixed-output derivations with content hashes
+- **Stow**: `pi install` uses npm registry (equivalent to `npm ci` determinism)
+
+### Nix configuration
+
+```nix
+programs.dot-agents = {
+  enable = true;
+  pi = {
+    # Auto-discover all external extensions from registry
+    externalExtensions = null;
+
+    # Or pick specific ones:
+    externalExtensions = ["pi-mcp-adapter"];
+
+    # Or disable all:
+    externalExtensions = [];
+  };
+};
+```
+
+Available extensions: `pi-mcp-adapter`
+
+### Non-Nix (stow)
+
+The stow branch includes a `.pi/agent/settings.json` with external packages.
+`setup.sh` runs `pi install npm:<name>` for each if `pi` is available.
+If Pi isn't installed yet, the settings are in place and packages will be
+installed when `pi install` is run later.
+
+### Adding a new external extension
+
+**Step 1 — Register the extension**
+
+Add an entry to `nix/pi-external-extensions.nix`:
+
+```nix
+"my-extension" = {
+  type = "npm";
+  package = "my-extension";          # npm package name
+  version = "1.0.0";                 # exact version to pin
+  description = "What this extension does";
+  hash = "";                         # fill in step 2
+  npmDepsHash = "";                  # fill in step 3
+};
+```
+
+**Step 2 — Get the tarball hash**
+
+```bash
+nix-prefetch-url https://registry.npmjs.org/my-extension/-/my-extension-1.0.0.tgz
+# Copy the sha256 output into the `hash` field
+```
+
+**Step 3 — Get the npm dependencies hash**
+
+Temporarily set `npmDepsHash = ""` in the registry entry, then:
+
+```bash
+nix build .#my-extension --rebuild 2>&1 | grep 'got:'
+# Copy the sha256 from the error message into `npmDepsHash`
+```
+
+This is a fixed-output derivation — it only needs to build once, then Nix
+caches the result.
+
+**Step 4 — Add to stow setup (non-Nix users)**
+
+Add the package name to the `EXTERNAL_PI_PACKAGES` array in `stow/setup.sh`:
+
+```bash
+EXTERNAL_PI_PACKAGES=(
+  "pi-mcp-adapter"
+  "my-extension"    # ← add here
+)
+```
+
+Also add it to the array inside the post-merge hook in the same file.
+
+**Step 5 — Verify**
+
+Nix: after Home Manager rebuild, the extension is in `~/.pi/agent/npm/node_modules/<name>/`
+and listed in `~/.pi/agent/settings.json`. Start Pi and confirm the extension
+loads via `/mcp` (for pi-mcp-adapter) or the extension's own commands.
+
+Stow: run `./setup.sh` — if `pi` is installed, the extension is installed
+automatically. Otherwise Pi will use it on next startup after `pi install npm:<name>`.
+
+**Summary of files to change when adding an extension:**
+
+1. `nix/pi-external-extensions.nix` — registry entry with hashes
+2. `stow/setup.sh` — add to `EXTERNAL_PI_PACKAGES` array (×2: main + post-merge hook)
+
+That's it. The rest is automatic — Nix builds and deploys the derivation,
+Home Manager merges settings.json, and stow runs `pi install`.
+
+## Pi Permissions (continued)
 
 ### Permission values
 
