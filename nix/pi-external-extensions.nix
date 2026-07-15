@@ -36,6 +36,6 @@
     hash = "sha256-fUVwNzZAxIpHK9HqbT+x9FEp3ZPGmi6//2dX4eEN0lk=";
     # Installed output hash (SRI). Set to lib.fakeSha256, build, use 'got:' from error.
     # This may shift when transitive deps publish new patches — one-line fix.
-    npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    npmDepsHash = "sha256-NKDCt4aTiOVu6DGJbhcp/Cahf6TFHBWa0wtRQDBY9n4=";
   };
 }
