@@ -9,11 +9,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    git-hooks = {
-      url = "github:cachix/git-hooks.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # External skill sources
     anthropics-agent-skills = {
       url = "github:anthropics/skills";
@@ -25,7 +20,6 @@
     self,
     nixpkgs,
     home-manager,
-    git-hooks,
     anthropics-agent-skills,
   }: let
     systems = [
@@ -41,15 +35,9 @@
       lib.genAttrs systems (
         system: let
           pkgs = nixpkgs.legacyPackages.${system};
-          pre-commit-check = git-hooks.lib.${system}.run {
-            src = ./.;
-            hooks = {
-              alejandra.enable = true;
-            };
-          };
         in
           f {
-            inherit system pkgs pre-commit-check;
+            inherit system pkgs;
           }
       );
 
@@ -78,7 +66,6 @@
       {
         system,
         pkgs,
-        pre-commit-check,
         ...
       }: let
         # Minimal home-manager configuration to validate the module evaluates
@@ -96,26 +83,10 @@
           ];
         };
       in {
-        inherit pre-commit-check;
         pi-node-modules = self.packages.${system}.pi-node-modules;
         home-manager-module = hmConfig.activationPackage;
       }
     );
-
-    devShells = eachSystem ({
-      pkgs,
-      pre-commit-check,
-      ...
-    }: {
-      default = pkgs.mkShell {
-        shellHook =
-          pre-commit-check.shellHook
-          + ''
-            cd pi && npm install
-          '';
-        packages = [pkgs.nodejs pkgs.rsync pkgs.alejandra];
-      };
-    });
 
     homeModules.default = import ./nix/home-manager.nix {inherit self externalSources;};
   };
