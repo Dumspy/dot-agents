@@ -7,27 +7,15 @@ EXTERNAL_PI_PACKAGES=(
   "pi-mcp-adapter"
 )
 
-# Install a post-merge hook that reinstalls Pi extension dependencies after
-# the stow branch is updated.
+# Install a post-merge hook that re-runs this script after the stow branch
+# is updated, so both local deps and external extensions stay in sync.
 mkdir -p .git/hooks
 cat > .git/hooks/post-merge <<'HOOK'
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-
-# Reinstall local extension npm deps
-if [ -f .pi/agent/package-lock.json ]; then
-  echo "[dot-agents] Installing Pi extension dependencies..."
-  (cd .pi/agent && npm ci)
-fi
-
-# Reinstall external Pi extensions (if pi CLI is available)
-if command -v pi &> /dev/null; then
-  EXTERNAL_PI_PACKAGES=("pi-mcp-adapter")
-  for pkg in "${EXTERNAL_PI_PACKAGES[@]}"; do
-    echo "[dot-agents] Installing Pi extension: $pkg"
-    pi install "npm:$pkg"
-  done
+if [ -f stow/setup.sh ]; then
+  bash stow/setup.sh
 fi
 HOOK
 chmod +x .git/hooks/post-merge

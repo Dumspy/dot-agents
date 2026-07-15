@@ -26,6 +26,7 @@
   version,
   hash,
   npmDepsHash,
+  metaDescription ? packageName,
 }: let
   tarball = fetchurl {
     url = "https://registry.npmjs.org/${packageName}/-/${packageName}-${version}.tgz";
@@ -64,5 +65,11 @@ in
     outputHash = npmDepsHash;
     outputHashAlgo = "sha256";
     outputHashMode = "recursive";
+
+    # Pure JS packages — no ELF binaries or shebangs to patch.
     dontFixup = true;
+
+    meta = {
+      description = metaDescription;
+    };
   }

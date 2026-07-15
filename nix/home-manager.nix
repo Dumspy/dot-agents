@@ -259,12 +259,12 @@ in {
 
       externalExtensions = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
-        default = null;
+        default = [];
         description = ''
-          External Pi extensions to install from npm (discovered in
-          ~/.pi/agent/node_modules/ by Pi automatically).
+          External Pi extensions to install from npm, deployed to
+          ~/.pi/agent/npm/<name>/ and registered in settings.json.
           Set to `null` to auto-discover all from the registry.
-          Set to `[]` to disable external extensions.
+          Set to `[]` to disable external extensions (default).
         '';
       };
 

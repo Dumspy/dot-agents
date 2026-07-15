@@ -31,12 +31,16 @@
       version = spec.version;
       hash = spec.hash;
       npmDepsHash = spec.npmDepsHash;
+      metaDescription = spec.description or spec.package;
     };
 
   skillPackages = lib.mapAttrs mkSkillPackage skillRegistry;
 
   npmExts = lib.filterAttrs (_: spec: spec.type == "npm") piExtRegistry;
   extPackages = lib.mapAttrs mkPiNpmPackage npmExts;
+
+  collisions = lib.intersectLists (builtins.attrNames skillPackages) (builtins.attrNames extPackages);
 in
-  # Merge skill and extension packages into one attrset
-  skillPackages // extPackages
+  assert lib.assertMsg (collisions == [])
+  "packages.nix: skill and extension names collide: ${lib.concatStringsSep ", " collisions}. Rename one.";
+    skillPackages // extPackages
