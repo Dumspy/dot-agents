@@ -10,10 +10,11 @@ pi/
 ├── tsconfig.json             # TypeScript config
 ├── AGENTS.md                 # This file
 └── extensions/
-    └── permission-system/         # Multi-file extension
+    ├── permission-system/         # Legacy permission extension
+    └── sandbox/                   # Gondolin sandbox extension
         ├── index.ts               # Extension entry point
-        ├── lib.ts                 # Pure logic (testable)
-        └── test.ts                # Unit tests
+        ├── backends/              # Host and sandbox backends
+        └── test/                  # Unit and opt-in VM tests
 ```
 
 **Flat file:** single `.ts` file directly in `extensions/`. Use this for simple extensions.  
@@ -98,7 +99,7 @@ step-by-step guide for adding new ones.
 
 ## Permission System Extension
 
-The built-in `permission-system` extension provides configurable gates and secret masking for Pi tools.
+The legacy `permission-system` extension provides configurable gates and secret masking for Pi tools. It remains the default while `programs.dot-agents.pi.sandbox.enable` is false; the Home Manager module selects the sandbox extension instead when the experimental sandbox is enabled.
 
 ### Permission values
 

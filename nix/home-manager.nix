@@ -58,9 +58,17 @@
     fileNames ++ dirNames;
   enabledPiExtensions =
     if cfg.pi.extensions == null
-    then piExtensionNames
+    then
+      lib.filter (
+        name:
+          (name != "sandbox" || cfg.pi.sandbox.enable)
+          && (name != "permission-system" || !cfg.pi.sandbox.enable)
+      )
+      piExtensionNames
     else cfg.pi.extensions;
   missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
+  disabledPiExtensions = lib.filter (name: !lib.elem name enabledPiExtensions) piExtensionNames;
+  sandboxEnabled = lib.elem "sandbox" enabledPiExtensions;
 
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
@@ -102,12 +110,31 @@
         --exclude='test/' --exclude='__tests__/' \
         ${piExtensionsDir}/ $out/
       chmod -R u+w $out
+      ${lib.concatMapStringsSep "\n" (name: ''
+          rm -rf "$out/${name}" "$out/${name}.ts"
+        '')
+        disabledPiExtensions}
     '';
 
   # Generate permissions.json from Nix config
   permissionsJson = pkgs.writeText "pi-permissions.json" (builtins.toJSON {
     rules = cfg.pi.permissions;
     masks = cfg.pi.masks;
+  });
+
+  # Generate sandbox.json from trusted global Nix config
+  sandboxJson = pkgs.writeText "pi-sandbox.json" (builtins.toJSON {
+    version = 1;
+    backend = "gondolin";
+    gondolin =
+      {
+        startupCommands = cfg.pi.sandbox.startupCommands;
+        cpus = cfg.pi.sandbox.cpus;
+        memoryBytes = cfg.pi.sandbox.memoryBytes;
+        rootfsBytes = cfg.pi.sandbox.rootfsBytes;
+      }
+      // lib.optionalAttrs (cfg.pi.sandbox.image != null) {inherit (cfg.pi.sandbox) image;};
+    protectedPaths = cfg.pi.sandbox.protectedPaths;
   });
 
   # Generate keybindings.json from Nix config
@@ -258,6 +285,46 @@ in {
         '';
       };
 
+      sandbox = {
+        enable = lib.mkEnableOption "the experimental Gondolin-backed Pi sandbox";
+
+        image = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Optional Gondolin image selector or guest asset path.";
+        };
+
+        startupCommands = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [];
+          description = "Trusted commands run inside each newly created Gondolin guest.";
+        };
+
+        cpus = lib.mkOption {
+          type = lib.types.ints.between 1 16;
+          default = 2;
+          description = "Virtual CPUs assigned to the Pi Gondolin guest.";
+        };
+
+        memoryBytes = lib.mkOption {
+          type = lib.types.ints.between 1 (32 * 1024 * 1024 * 1024);
+          default = 4 * 1024 * 1024 * 1024;
+          description = "Memory assigned to the Pi Gondolin guest in bytes.";
+        };
+
+        rootfsBytes = lib.mkOption {
+          type = lib.types.ints.between 1 (100 * 1024 * 1024 * 1024);
+          default = 8 * 1024 * 1024 * 1024;
+          description = "Disposable Gondolin root filesystem size in bytes.";
+        };
+
+        protectedPaths = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [];
+          description = "Additional protected path globs applied inside host-backed mounts.";
+        };
+      };
+
       externalExtensions = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
         default = [];
@@ -321,6 +388,14 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    home.packages = lib.mkIf sandboxEnabled [
+      (
+        if pkgs.stdenv.isLinux
+        then pkgs.qemu_kvm
+        else pkgs.qemu
+      )
+    ];
+
     assertions = [
       {
         assertion = missingPiExtensions == [];
@@ -391,9 +466,13 @@ in {
         ".pi/agent/package.json".source = piDir + "/package.json";
         ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
-      # Pi permissions
+      # Pi permissions (preserved while the sandbox is developed alongside the legacy system)
       (lib.mkIf (cfg.pi.permissions != {} || cfg.pi.masks != {}) {
         ".pi/agent/permissions.json".source = permissionsJson;
+      })
+      # Pi sandbox
+      (lib.mkIf sandboxEnabled {
+        ".pi/agent/sandbox.json".source = sandboxJson;
       })
       # Pi keybindings
       (lib.mkIf (cfg.pi.keybindings != {}) {
