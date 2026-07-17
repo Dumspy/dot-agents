@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import type { GondolinConfig, SandboxConfig } from "./types.js";
 
 export interface SandboxConfigOverlay {
@@ -206,7 +207,7 @@ export async function loadSandboxConfig(options: {
 	projectTrusted: boolean;
 }): Promise<SandboxConfig> {
 	const globalPath = path.join(options.agentDir, "sandbox.json");
-	const projectPath = path.join(options.workspace, ".pi", "sandbox.json");
+	const projectPath = path.join(options.workspace, CONFIG_DIR_NAME, "sandbox.json");
 	const globalValue = await loadOptionalJson(globalPath);
 	const projectValue = options.projectTrusted ? await loadOptionalJson(projectPath) : undefined;
 	const globalConfig = globalValue === undefined ? structuredClone(DEFAULT_SANDBOX_CONFIG) : parseSandboxConfig(globalValue, globalPath);

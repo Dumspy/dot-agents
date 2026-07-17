@@ -10,6 +10,7 @@ import {
 	createLsTool,
 	createReadTool,
 	createWriteTool,
+	getAgentDir,
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
@@ -43,10 +44,6 @@ const REQUEST_EXTERNAL_PARAMS = Type.Object({
 	mode: StringEnum(["read-only", "read-write"] as const, { description: "Requested access level" }),
 	reason: Type.Optional(Type.String({ description: "Short explanation shown to the user" })),
 });
-
-function agentDirectory(): string {
-	return path.join(os.homedir(), ".pi", "agent");
-}
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -161,8 +158,10 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 		if (gondolin.status().state === "running" && !gondolin.isAlive()) {
 			gondolin.markFailed(new Error("Gondolin VM process exited"));
 		}
-		if (gondolin.status().state === "failed") {
-			ctx.ui.notify("Recreating Gondolin VM; guest-local state was lost.", "warning");
+		if (gondolin.status().state === "failed" || gondolin.status().state === "recovering") {
+			if (gondolin.status().state === "failed") {
+				ctx.ui.notify("Recreating Gondolin VM; guest-local state was lost.", "warning");
+			}
 			updateStatus(ctx);
 			await gondolin.recover();
 			updateStatus(ctx);
@@ -190,7 +189,7 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 			throw new Error(`Unsupported sandbox backend: ${String(selected)}`);
 		}
 		backend = noSandbox ? host : gondolin;
-		config = await loadSandboxConfig({ agentDir: agentDirectory(), workspace, projectTrusted: ctx.isProjectTrusted() });
+		config = await loadSandboxConfig({ agentDir: getAgentDir(), workspace, projectTrusted: ctx.isProjectTrusted() });
 		updateStatus(ctx);
 		try {
 			await backend.start({

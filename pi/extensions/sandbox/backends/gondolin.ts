@@ -14,6 +14,8 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+type VmFactory = (options: Parameters<typeof VM.create>[0]) => Promise<VM>;
+
 export class GondolinBackend implements SandboxBackend {
 	readonly name = "gondolin";
 	readonly mode = "gondolin" as const;
@@ -25,6 +27,9 @@ export class GondolinBackend implements SandboxBackend {
 	#options: SandboxStartOptions | undefined;
 	#externalProvider = new DynamicMountProvider();
 	readonly #mounts = new Map<string, ExternalMount>();
+	#lifecycleTail: Promise<void> = Promise.resolve();
+
+	constructor(private readonly createVm: VmFactory = VM.create) {}
 
 	status(): SandboxBackendStatus {
 		return {
@@ -49,13 +54,17 @@ export class GondolinBackend implements SandboxBackend {
 		return this.#state === "running" && this.#vm?.getHostPid() !== null;
 	}
 
-	async start(options: SandboxStartOptions): Promise<void> {
-		if (this.#state === "running") return;
-		if (this.#state === "starting" || this.#state === "recovering" || this.#state === "stopping") {
-			throw new Error(`Cannot start Gondolin while state is ${this.#state}`);
-		}
+	start(options: SandboxStartOptions): Promise<void> {
+		const savedOptions = structuredClone(options);
+		return this.#enqueueLifecycle(async () => {
+			if (this.#state === "running") return;
+			await this.#startVm(savedOptions, this.#state === "failed" ? "recovering" : "starting");
+		});
+	}
+
+	async #startVm(options: SandboxStartOptions, state: "starting" | "recovering"): Promise<void> {
 		this.#options = structuredClone(options);
-		this.#state = this.#state === "failed" ? "recovering" : "starting";
+		this.#state = state;
 		this.#error = undefined;
 		this.#externalProvider = new DynamicMountProvider();
 		for (const mount of this.#mounts.values()) this.#installExternalProvider(mount);
@@ -67,7 +76,7 @@ export class GondolinBackend implements SandboxBackend {
 		});
 		const { httpHooks } = createHttpHooks();
 		try {
-			const vm = await VM.create({
+			const vm = await this.createVm({
 				sessionLabel: `pi ${path.basename(options.workspaceHostPath)}`,
 				sandbox: options.gondolin.image ? { imagePath: options.gondolin.image } : undefined,
 				cpus: options.gondolin.cpus,
@@ -104,23 +113,25 @@ export class GondolinBackend implements SandboxBackend {
 		}
 	}
 
-	async stop(): Promise<void> {
-		if (!this.#vm) {
-			this.#mounts.clear();
-			this.#externalProvider = new DynamicMountProvider();
-			this.#state = "stopped";
-			return;
-		}
-		this.#state = "stopping";
-		const vm = this.#vm;
-		this.#vm = undefined;
-		try {
-			await vm.close();
-		} finally {
-			this.#mounts.clear();
-			this.#externalProvider = new DynamicMountProvider();
-			this.#state = "stopped";
-		}
+	stop(): Promise<void> {
+		return this.#enqueueLifecycle(async () => {
+			if (!this.#vm) {
+				this.#mounts.clear();
+				this.#externalProvider = new DynamicMountProvider();
+				this.#state = "stopped";
+				return;
+			}
+			this.#state = "stopping";
+			const vm = this.#vm;
+			this.#vm = undefined;
+			try {
+				await vm.close();
+			} finally {
+				this.#mounts.clear();
+				this.#externalProvider = new DynamicMountProvider();
+				this.#state = "stopped";
+			}
+		});
 	}
 
 	markFailed(error: unknown): void {
@@ -128,13 +139,16 @@ export class GondolinBackend implements SandboxBackend {
 		this.#state = "failed";
 	}
 
-	async recover(): Promise<void> {
-		if (!this.#options) throw new Error("Cannot recover Gondolin before initial startup");
-		const oldVm = this.#vm;
-		this.#vm = undefined;
-		if (oldVm) await oldVm.close().catch(() => undefined);
-		this.#state = "failed";
-		await this.start(this.#options);
+	recover(): Promise<void> {
+		return this.#enqueueLifecycle(async () => {
+			if (this.#state === "running" && this.isAlive()) return;
+			if (!this.#options) throw new Error("Cannot recover Gondolin before initial startup");
+			this.#state = "recovering";
+			const oldVm = this.#vm;
+			this.#vm = undefined;
+			if (oldVm) await oldVm.close().catch(() => undefined);
+			await this.#startVm(this.#options, "recovering");
+		});
 	}
 
 	async mountExternal(mount: ExternalMount): Promise<void> {
@@ -167,7 +181,14 @@ export class GondolinBackend implements SandboxBackend {
 		const provider: VirtualProvider = createHostDirectoryProvider({
 			hostPath: mount.hostPath,
 			mode: mount.mode,
+			additionalProtectedPaths: this.#options?.protectedPaths,
 		});
 		this.#externalProvider.setMount(this.#externalProviderPath(mount.guestPath), provider);
+	}
+
+	#enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
+		const result = this.#lifecycleTail.then(operation, operation);
+		this.#lifecycleTail = result.catch(() => undefined);
+		return result;
 	}
 }

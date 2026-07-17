@@ -1,7 +1,24 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { isInsidePath, isProtectedHostLocation, isProtectedRelativePath } from "./paths.js";
 
 export type HostPathOperation = "read" | "write";
+
+function canonicalizePotentialPath(value: string): string {
+	let candidate = path.resolve(value);
+	const missingSegments: string[] = [];
+	while (true) {
+		try {
+			return path.join(realpathSync(candidate), ...missingSegments.reverse());
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			const parent = path.dirname(candidate);
+			if (parent === candidate) return path.resolve(value);
+			missingSegments.push(path.basename(candidate));
+			candidate = parent;
+		}
+	}
+}
 
 export function assertHostPathAllowed(options: {
 	value: string;
@@ -10,7 +27,7 @@ export function assertHostPathAllowed(options: {
 	operation: HostPathOperation;
 	additionalProtectedPaths?: readonly string[];
 }): void {
-	const absolute = path.resolve(options.workspace, options.value);
+	const absolute = canonicalizePotentialPath(path.resolve(options.workspace, options.value));
 	if (isProtectedHostLocation(absolute, options.homeDir)) throw new Error(`Host-mode policy denies credential path ${absolute}`);
 	const relative = isInsidePath(options.workspace, absolute) ? path.relative(options.workspace, absolute) : path.basename(absolute);
 	if (isProtectedRelativePath(relative, options.additionalProtectedPaths)) throw new Error(`Host-mode policy denies protected path ${absolute}`);
