@@ -28,7 +28,7 @@ integration("GondolinBackend integration", () => {
 		await backend.start({
 			workspaceHostPath: workspace,
 			workspaceGuestPath: "/workspace",
-			gondolin: {
+			backendConfig: {
 				cpus: 1,
 				memoryBytes: 1024 ** 3,
 				rootfsBytes: 2 * 1024 ** 3,

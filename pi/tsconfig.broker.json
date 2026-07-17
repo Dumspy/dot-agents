@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "./extensions/sandbox",
+    "outDir": "./dist/sandbox-broker",
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["extensions/sandbox/broker/main.ts"]
+}

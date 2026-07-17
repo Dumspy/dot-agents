@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
-import { isMatch } from "picomatch";
+import picomatch from "picomatch";
 import { GUEST_EXTERNAL_ROOT, GUEST_WORKSPACE } from "./types.js";
 
 export type MountTarget = {
@@ -91,7 +91,7 @@ export function isProtectedRelativePath(value: string, additionalPatterns: reado
 	if (basename === ".envrc") return true;
 	if (KEY_EXTENSIONS.has(path.posix.extname(basename))) return true;
 	if (basename === "credentials" || basename === "credentials.json" || basename === "secrets.json") return true;
-	return additionalPatterns.some((pattern) => isMatch(normalized, pattern, { dot: true }));
+	return additionalPatterns.some((pattern) => picomatch.isMatch(normalized, pattern, { dot: true }));
 }
 
 export function guestMountPath(canonicalPath: string, existingGuestPaths: Iterable<string> = []): string {

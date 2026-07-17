@@ -43,11 +43,16 @@ describe("SandboxPolicy", () => {
 		expect(await policy.prepareToolPath(file, "read-only")).toBe(`${mount.guestPath}/file.txt`);
 	});
 
-	it("does not silently upgrade a read-only mount", async () => {
+	it("requires approval before upgrading a read-only mount", async () => {
 		const { root, workspace, external } = await fixture();
 		const policy = new SandboxPolicy(workspace, root);
 		policy.mounts.add(external, "read-only");
-		await expect(policy.prepareToolPath(path.join(external, "new.txt"), "read-write")).rejects.toThrow("read-only");
+		await expect(policy.prepareToolPath(path.join(external, "new.txt"), "read-write")).rejects.toMatchObject({
+			name: "ExternalAccessRequiredError",
+			mountRoot: external,
+			requestedMode: "read-write",
+			upgrade: true,
+		});
 	});
 
 	it("detects workspace symlink escapes", async () => {

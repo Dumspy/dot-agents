@@ -70,8 +70,9 @@
   disabledPiExtensions = lib.filter (name: !lib.elem name enabledPiExtensions) piExtensionNames;
   sandboxEnabled = lib.elem "sandbox" enabledPiExtensions;
 
-  # Build node_modules for Pi extensions with public npm deps
+  # Build node_modules and the executable workspace broker for Pi sandbox support.
   piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
+  piSandboxBroker = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-sandbox-broker;
 
   # --- External Pi extensions (npm) ---
   allExternalExtNames = builtins.attrNames piExternalExtRegistry;
@@ -473,6 +474,7 @@ in {
       # Pi sandbox
       (lib.mkIf sandboxEnabled {
         ".pi/agent/sandbox.json".source = sandboxJson;
+        ".pi/agent/libexec/sandbox-broker".source = "${piSandboxBroker}/libexec/sandbox-broker";
       })
       # Pi keybindings
       (lib.mkIf (cfg.pi.keybindings != {}) {

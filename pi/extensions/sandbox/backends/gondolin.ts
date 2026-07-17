@@ -1,6 +1,35 @@
 import path from "node:path";
 import { VM, createHttpHooks, type VirtualProvider } from "@earendil-works/gondolin";
-import { GUEST_EXTERNAL_ROOT, type ExternalMount, type SandboxBackend, type SandboxBackendStatus, type SandboxStartOptions, type SandboxState } from "../types.js";
+import {
+	createBashTool,
+	createEditTool,
+	createFindTool,
+	createLsTool,
+	createReadTool,
+	createWriteTool,
+} from "@earendil-works/pi-coding-agent";
+import {
+	createGondolinBashOps,
+	createGondolinEditOps,
+	createGondolinFindOps,
+	createGondolinLsOps,
+	createGondolinReadOps,
+	createGondolinWriteOps,
+	executeGondolinGrep,
+} from "../operations.js";
+import {
+	GUEST_EXTERNAL_ROOT,
+	GUEST_WORKSPACE,
+	type ExternalMount,
+	type GondolinConfig,
+	type SandboxBackendStatus,
+	type SandboxExecutionBackend,
+	type SandboxStartOptions,
+	type SandboxState,
+	type SandboxToolRequest,
+	type SandboxToolResult,
+	type SandboxToolUpdate,
+} from "../types.js";
 import { DynamicMountProvider } from "./dynamic-mount-provider.js";
 import { createHostDirectoryProvider } from "./providers.js";
 
@@ -14,9 +43,13 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function gondolinConfig(options: SandboxStartOptions<"gondolin">): GondolinConfig {
+	return options.backendConfig;
+}
+
 type VmFactory = (options: Parameters<typeof VM.create>[0]) => Promise<VM>;
 
-export class GondolinBackend implements SandboxBackend {
+export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 	readonly name = "gondolin";
 	readonly mode = "gondolin" as const;
 
@@ -69,6 +102,7 @@ export class GondolinBackend implements SandboxBackend {
 		this.#externalProvider = new DynamicMountProvider();
 		for (const mount of this.#mounts.values()) this.#installExternalProvider(mount);
 
+		const config = gondolinConfig(options);
 		const workspaceProvider = createHostDirectoryProvider({
 			hostPath: options.workspaceHostPath,
 			mode: "read-write",
@@ -78,13 +112,13 @@ export class GondolinBackend implements SandboxBackend {
 		try {
 			const vm = await this.createVm({
 				sessionLabel: `pi ${path.basename(options.workspaceHostPath)}`,
-				sandbox: options.gondolin.image ? { imagePath: options.gondolin.image } : undefined,
-				cpus: options.gondolin.cpus,
-				memory: bytesAsQemuSize(options.gondolin.memoryBytes),
+				sandbox: config.image ? { imagePath: config.image } : undefined,
+				cpus: config.cpus,
+				memory: bytesAsQemuSize(config.memoryBytes),
 				// The published alpine-base image does not include resize2fs, so its
 				// native size must be used. Explicit project images may opt into the
 				// configured size and must provide resize2fs themselves.
-				rootfs: options.gondolin.image ? { size: options.gondolin.rootfsBytes } : undefined,
+				rootfs: config.image ? { size: config.rootfsBytes } : undefined,
 				httpHooks,
 				vfs: {
 					mounts: {
@@ -96,7 +130,7 @@ export class GondolinBackend implements SandboxBackend {
 			this.#vm = vm;
 			const probe = await vm.exec(["/bin/sh", "-lc", "command -v bash || true"]);
 			this.#shellPath = probe.stdout.trim() || "/bin/sh";
-			for (const command of options.gondolin.startupCommands) {
+			for (const command of config.startupCommands) {
 				const result = await vm.exec([this.#shellPath, "-lc", command], { cwd: options.workspaceGuestPath });
 				if (result.exitCode !== 0) {
 					throw new Error(`Guest startup command failed (${result.exitCode}): ${command}\n${result.stderr.trim()}`);
@@ -134,7 +168,7 @@ export class GondolinBackend implements SandboxBackend {
 		});
 	}
 
-	markFailed(error: unknown): void {
+	markFailed(error: Error): void {
 		this.#error = errorMessage(error);
 		this.#state = "failed";
 	}
@@ -167,6 +201,69 @@ export class GondolinBackend implements SandboxBackend {
 		if (!mount) throw new Error(`${guestPath} is not mounted in Gondolin`);
 		this.#mounts.delete(mount.hostPath);
 		this.#externalProvider.removeMount(this.#externalProviderPath(guestPath));
+	}
+
+	async executeTool(
+		request: SandboxToolRequest,
+		signal?: AbortSignal,
+		onUpdate?: SandboxToolUpdate,
+	): Promise<SandboxToolResult> {
+		const getVm = () => this.vm;
+		switch (request.name) {
+			case "read":
+				return createReadTool(GUEST_WORKSPACE, { operations: createGondolinReadOps(getVm) }).execute(
+					request.toolCallId,
+					request.params,
+					signal,
+					onUpdate,
+				);
+			case "write":
+				return createWriteTool(GUEST_WORKSPACE, { operations: createGondolinWriteOps(getVm) }).execute(
+					request.toolCallId,
+					request.params,
+					signal,
+					onUpdate,
+				);
+			case "edit":
+				return createEditTool(GUEST_WORKSPACE, { operations: createGondolinEditOps(getVm) }).execute(
+					request.toolCallId,
+					request.params,
+					signal,
+					onUpdate,
+				);
+			case "bash":
+				return createBashTool(GUEST_WORKSPACE, {
+					operations: createGondolinBashOps(getVm, () => this.shellPath),
+				}).execute(request.toolCallId, request.params, signal, onUpdate);
+			case "ls":
+				return createLsTool(GUEST_WORKSPACE, { operations: createGondolinLsOps(getVm) }).execute(
+					request.toolCallId,
+					request.params,
+					signal,
+					onUpdate,
+				);
+			case "find":
+				return createFindTool(GUEST_WORKSPACE, { operations: createGondolinFindOps(getVm) }).execute(
+					request.toolCallId,
+					request.params,
+					signal,
+					onUpdate,
+				);
+			case "grep":
+				return executeGondolinGrep(getVm, request.params, signal);
+		}
+	}
+
+	exec(
+		command: string,
+		cwd: string,
+		options: { signal?: AbortSignal; timeout?: number; onData: (data: Buffer) => void },
+	): Promise<{ exitCode: number | null }> {
+		return createGondolinBashOps(() => this.vm, () => this.shellPath).exec(command, cwd, {
+			onData: options.onData,
+			signal: options.signal,
+			timeout: options.timeout,
+		});
 	}
 
 	#externalProviderPath(guestPath: string): string {

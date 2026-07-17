@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { VM, VirtualProvider } from "@earendil-works/gondolin";
+import { VM, type VirtualProvider } from "@earendil-works/gondolin";
 import { afterEach, describe, expect, it } from "vitest";
 import { GondolinBackend } from "../backends/gondolin.js";
 
@@ -9,7 +9,7 @@ const roots: string[] = [];
 
 function fakeVm(id: string, closeDelayMs = 0): VM {
 	let closed = false;
-	return {
+	return Object.assign(Object.create(VM.prototype) as VM, {
 		id,
 		getHostPid: () => (closed ? null : 1234),
 		exec: async () => ({ exitCode: 0, stdout: "/bin/sh\n", stderr: "" }),
@@ -17,14 +17,14 @@ function fakeVm(id: string, closeDelayMs = 0): VM {
 			if (closeDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, closeDelayMs));
 			closed = true;
 		},
-	} as unknown as VM;
+	});
 }
 
 function startOptions(workspace: string, protectedPaths: string[] = []) {
 	return {
 		workspaceHostPath: workspace,
 		workspaceGuestPath: "/workspace" as const,
-		gondolin: {
+		backendConfig: {
 			cpus: 1,
 			memoryBytes: 1024 ** 3,
 			rootfsBytes: 2 * 1024 ** 3,

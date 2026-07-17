@@ -4,6 +4,8 @@
 
 Proposed and agreed design for the first proof of concept. In this document, **v1 and POC have the same scope**: the POC should demonstrate the complete intended v1 workflow rather than a reduced throwaway prototype.
 
+The lifecycle and sharing model is refined by [pi-sandbox-workspace-broker-design.md](./pi-sandbox-workspace-broker-design.md): sandboxed Pi processes in the same exact canonical workspace share one ephemeral broker, backend, and mount registry while at least one process remains attached.
+
 ## Purpose
 
 Replace Pi's prompt-heavy permission system with isolation that is safer by default and usually requires no user interaction.
