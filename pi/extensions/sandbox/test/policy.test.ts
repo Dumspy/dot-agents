@@ -39,7 +39,7 @@ describe("SandboxPolicy", () => {
 			request = error as ExternalAccessRequiredError;
 		}
 		expect(request?.mountRoot).toBe(external);
-		const mount = policy.approveExternal(request!, "read-only");
+		const mount = policy.mounts.add(request!.mountRoot, "read-only");
 		expect(await policy.prepareToolPath(file, "read-only")).toBe(`${mount.guestPath}/file.txt`);
 	});
 

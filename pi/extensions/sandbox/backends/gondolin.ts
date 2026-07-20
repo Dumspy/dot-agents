@@ -30,17 +30,23 @@ import {
 	type SandboxToolResult,
 	type SandboxToolUpdate,
 } from "../types.js";
+import { errorMessage } from "../utils.js";
 import { DynamicMountProvider } from "./dynamic-mount-provider.js";
 import { createHostDirectoryProvider } from "./providers.js";
+
+type ExecutableTool = {
+	execute(
+		toolCallId: string,
+		params: never,
+		signal?: AbortSignal,
+		onUpdate?: SandboxToolUpdate,
+	): Promise<SandboxToolResult>;
+};
 
 function bytesAsQemuSize(bytes: number): string {
 	if (bytes % 1024 ** 3 === 0) return `${bytes / 1024 ** 3}G`;
 	if (bytes % 1024 ** 2 === 0) return `${bytes / 1024 ** 2}M`;
 	return String(bytes);
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function gondolinConfig(options: SandboxStartOptions<"gondolin">): GondolinConfig {
@@ -150,8 +156,7 @@ export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 	stop(): Promise<void> {
 		return this.#enqueueLifecycle(async () => {
 			if (!this.#vm) {
-				this.#mounts.clear();
-				this.#externalProvider = new DynamicMountProvider();
+				this.#resetExternalMounts();
 				this.#state = "stopped";
 				return;
 			}
@@ -161,8 +166,7 @@ export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 			try {
 				await vm.close();
 			} finally {
-				this.#mounts.clear();
-				this.#externalProvider = new DynamicMountProvider();
+				this.#resetExternalMounts();
 				this.#state = "stopped";
 			}
 		});
@@ -203,55 +207,26 @@ export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 		this.#externalProvider.removeMount(this.#externalProviderPath(guestPath));
 	}
 
+	#guestTools(): Record<Exclude<SandboxToolRequest["name"], "grep">, ExecutableTool> {
+		const getVm = () => this.vm;
+		return {
+			read: createReadTool(GUEST_WORKSPACE, { operations: createGondolinReadOps(getVm) }),
+			write: createWriteTool(GUEST_WORKSPACE, { operations: createGondolinWriteOps(getVm) }),
+			edit: createEditTool(GUEST_WORKSPACE, { operations: createGondolinEditOps(getVm) }),
+			bash: createBashTool(GUEST_WORKSPACE, { operations: createGondolinBashOps(getVm, () => this.shellPath) }),
+			ls: createLsTool(GUEST_WORKSPACE, { operations: createGondolinLsOps(getVm) }),
+			find: createFindTool(GUEST_WORKSPACE, { operations: createGondolinFindOps(getVm) }),
+		};
+	}
+
 	async executeTool(
 		request: SandboxToolRequest,
 		signal?: AbortSignal,
 		onUpdate?: SandboxToolUpdate,
 	): Promise<SandboxToolResult> {
-		const getVm = () => this.vm;
-		switch (request.name) {
-			case "read":
-				return createReadTool(GUEST_WORKSPACE, { operations: createGondolinReadOps(getVm) }).execute(
-					request.toolCallId,
-					request.params,
-					signal,
-					onUpdate,
-				);
-			case "write":
-				return createWriteTool(GUEST_WORKSPACE, { operations: createGondolinWriteOps(getVm) }).execute(
-					request.toolCallId,
-					request.params,
-					signal,
-					onUpdate,
-				);
-			case "edit":
-				return createEditTool(GUEST_WORKSPACE, { operations: createGondolinEditOps(getVm) }).execute(
-					request.toolCallId,
-					request.params,
-					signal,
-					onUpdate,
-				);
-			case "bash":
-				return createBashTool(GUEST_WORKSPACE, {
-					operations: createGondolinBashOps(getVm, () => this.shellPath),
-				}).execute(request.toolCallId, request.params, signal, onUpdate);
-			case "ls":
-				return createLsTool(GUEST_WORKSPACE, { operations: createGondolinLsOps(getVm) }).execute(
-					request.toolCallId,
-					request.params,
-					signal,
-					onUpdate,
-				);
-			case "find":
-				return createFindTool(GUEST_WORKSPACE, { operations: createGondolinFindOps(getVm) }).execute(
-					request.toolCallId,
-					request.params,
-					signal,
-					onUpdate,
-				);
-			case "grep":
-				return executeGondolinGrep(getVm, request.params, signal);
-		}
+		if (request.name === "grep") return executeGondolinGrep(() => this.vm, request.params, signal);
+		const tool = this.#guestTools()[request.name];
+		return tool.execute(request.toolCallId, request.params as never, signal, onUpdate);
 	}
 
 	exec(
@@ -272,6 +247,11 @@ export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 			throw new Error(`Invalid external guest mount path: ${guestPath}`);
 		}
 		return `/${relative}`;
+	}
+
+	#resetExternalMounts(): void {
+		this.#mounts.clear();
+		this.#externalProvider = new DynamicMountProvider();
 	}
 
 	#installExternalProvider(mount: ExternalMount): void {

@@ -7,6 +7,7 @@ import {
 	BROKER_RECONNECT_GRACE_MS,
 	BROKER_START_TIMEOUT_MS,
 	encodeFrame,
+	FrameBuffer,
 	parseFrame,
 	type ApprovalRequiredData,
 	type BrokerApproveMountParams,
@@ -30,6 +31,7 @@ import {
 } from "../protocol.js";
 import { guestMountPath } from "../paths.js";
 import { ExternalAccessRequiredError } from "../policy.js";
+import { errorMessage } from "../utils.js";
 import { BrokerWorkspace } from "./workspace.js";
 
 type Lease = {
@@ -40,7 +42,7 @@ type Lease = {
 };
 
 type ConnectionState = {
-	buffer: string;
+	buffer: FrameBuffer;
 	leaseToken?: string;
 	requests: Map<string, AbortController>;
 };
@@ -57,10 +59,6 @@ type ApprovalWaiter = {
 	reject: (error: Error) => void;
 	onAbort: () => void;
 };
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 export class WorkspaceBrokerServer extends EventEmitter {
 	readonly #server = net.createServer((socket) => this.#accept(socket));
@@ -137,7 +135,7 @@ export class WorkspaceBrokerServer extends EventEmitter {
 			return;
 		}
 		socket.setEncoding("utf8");
-		const state: ConnectionState = { buffer: "", requests: new Map() };
+		const state: ConnectionState = { buffer: new FrameBuffer(), requests: new Map() };
 		this.#connections.set(socket, state);
 		socket.on("data", (chunk: string) => this.#data(socket, state, chunk));
 		socket.on("error", () => undefined);
@@ -145,17 +143,14 @@ export class WorkspaceBrokerServer extends EventEmitter {
 	}
 
 	#data(socket: Socket, state: ConnectionState, chunk: string): void {
-		state.buffer += chunk;
-		if (state.buffer.length > 16 * 1024 * 1024) {
-			socket.destroy(new Error("Sandbox broker frame exceeds 16 MiB"));
+		let lines: string[];
+		try {
+			lines = state.buffer.push(chunk);
+		} catch (error) {
+			socket.destroy(error as Error);
 			return;
 		}
-		while (true) {
-			const newline = state.buffer.indexOf("\n");
-			if (newline < 0) return;
-			const line = state.buffer.slice(0, newline);
-			state.buffer = state.buffer.slice(newline + 1);
-			if (!line.trim()) continue;
+		for (const line of lines) {
 			let frame: BrokerClientFrame;
 			try {
 				frame = parseFrame(line) as BrokerClientFrame;
@@ -167,6 +162,7 @@ export class WorkspaceBrokerServer extends EventEmitter {
 			else if (frame.type === "request") void this.#request(socket, state, frame);
 			else {
 				socket.destroy(new Error(`Unexpected broker frame type: ${(frame as { type: string }).type}`));
+				return;
 			}
 		}
 	}

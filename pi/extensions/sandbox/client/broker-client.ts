@@ -4,6 +4,7 @@ import type { Socket } from "node:net";
 import {
 	BROKER_PROTOCOL_VERSION,
 	encodeFrame,
+	FrameBuffer,
 	parseFrame,
 	type ApprovalRequiredData,
 	type BrokerApproveMountParams,
@@ -64,7 +65,7 @@ export class BrokerApprovalRequiredError extends Error {
 
 export class BrokerClient extends EventEmitter {
 	readonly #pending = new Map<string, PendingRequest>();
-	#buffer = "";
+	readonly #buffer = new FrameBuffer();
 	#closed = false;
 
 	get closed(): boolean {
@@ -216,17 +217,14 @@ export class BrokerClient extends EventEmitter {
 	}
 
 	#data(chunk: string): void {
-		this.#buffer += chunk;
-		if (this.#buffer.length > 16 * 1024 * 1024) {
-			this.socket.destroy(new Error("Sandbox broker frame exceeds 16 MiB"));
+		let lines: string[];
+		try {
+			lines = this.#buffer.push(chunk);
+		} catch (error) {
+			this.socket.destroy(error as Error);
 			return;
 		}
-		while (true) {
-			const newline = this.#buffer.indexOf("\n");
-			if (newline < 0) return;
-			const line = this.#buffer.slice(0, newline);
-			this.#buffer = this.#buffer.slice(newline + 1);
-			if (!line.trim()) continue;
+		for (const line of lines) {
 			let frame: BrokerServerFrame;
 			try {
 				frame = parseFrame(line) as BrokerServerFrame;

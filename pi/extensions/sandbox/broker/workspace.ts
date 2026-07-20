@@ -10,16 +10,28 @@ import type {
 	BrokerSnapshot,
 	BrokerToolParams,
 } from "../protocol.js";
-import type {
-	AccessMode,
-	ExternalMount,
-	SandboxBackendName,
-	SandboxExecutionBackend,
-	SandboxToolRequest,
-	SandboxToolResult,
-	SandboxToolUpdate,
+import {
+	GUEST_WORKSPACE,
+	type AccessMode,
+	type ExternalMount,
+	type SandboxBackendName,
+	type SandboxExecutionBackend,
+	type SandboxToolName,
+	type SandboxToolRequest,
+	type SandboxToolResult,
+	type SandboxToolUpdate,
 } from "../types.js";
 import { WorkspaceScheduler } from "./scheduler.js";
+
+/** Tools that take a path and the access mode the broker must guarantee for it. */
+const TOOL_PATH_MODES: Record<Exclude<SandboxToolName, "bash">, AccessMode> = {
+	read: "read-only",
+	write: "read-write",
+	edit: "read-write",
+	grep: "read-only",
+	find: "read-only",
+	ls: "read-only",
+};
 
 type BackendFactory = () => SandboxExecutionBackend<"gondolin">;
 type WorkspaceEvent = <TEvent extends keyof BrokerEventDataMap>(event: TEvent, data: BrokerEventDataMap[TEvent]) => void;
@@ -33,8 +45,8 @@ function normalizeAttachment(params: BrokerAttachParams, workspace: string): Bro
 	if (params.workspace !== workspace || params.startOptions.workspaceHostPath !== workspace) {
 		throw new Error(`Broker workspace mismatch: expected ${workspace}`);
 	}
-	if (params.startOptions.workspaceGuestPath !== "/workspace") {
-		throw new Error(`Broker workspace guest path must be /workspace`);
+	if (params.startOptions.workspaceGuestPath !== GUEST_WORKSPACE) {
+		throw new Error(`Broker workspace guest path must be ${GUEST_WORKSPACE}`);
 	}
 	const config = parseSandboxConfig(
 		{
@@ -49,7 +61,7 @@ function normalizeAttachment(params: BrokerAttachParams, workspace: string): Bro
 		...params,
 		startOptions: {
 			workspaceHostPath: workspace,
-			workspaceGuestPath: "/workspace",
+			workspaceGuestPath: GUEST_WORKSPACE,
 			backendConfig: config.gondolin,
 			protectedPaths: config.protectedPaths,
 		},
@@ -127,7 +139,7 @@ export class BrokerWorkspace {
 		if (!this.#backend) throw new Error("Workspace sandbox has not started");
 		return {
 			workspace: this.workspace,
-			workspaceGuestPath: "/workspace",
+			workspaceGuestPath: GUEST_WORKSPACE,
 			backend: this.#backend.status(),
 			attachedProcesses,
 			mounts: this.policy.mounts.list(),
@@ -165,15 +177,15 @@ export class BrokerWorkspace {
 	}
 
 	approveMount(path: string, mode: AccessMode): Promise<ExternalMount> {
-		return this.scheduler.runExclusive(() => this.#mountDirectory(path, mode));
+		return this.scheduler.runExclusive(() =>
+			this.#mountDirectory(path, mode, `External mount approval requires a directory: ${path}`),
+		);
 	}
 
 	mount(path: string, mode: AccessMode): Promise<ExternalMount> {
-		return this.scheduler.runExclusive(async () => {
-			const target = await resolveMountTarget(path, this.policy.homeDir);
-			if (target.isFileRequest) throw new Error("/mount requires a directory path, not a file");
-			return this.#mountCanonicalDirectory(target.canonicalPath, mode);
-		});
+		return this.scheduler.runExclusive(() =>
+			this.#mountDirectory(path, mode, "/mount requires a directory path, not a file"),
+		);
 	}
 
 	setMountMode(hostPath: string, mode: AccessMode): Promise<ExternalMount> {
@@ -181,11 +193,7 @@ export class BrokerWorkspace {
 			const current = this.policy.mounts.findByHostPath(hostPath);
 			if (!current) throw new Error(`${hostPath} is not mounted`);
 			if (current.mode === mode) return current;
-			const updated = { ...current, mode };
-			await (await this.#ensureBackend()).updateExternalMount(updated);
-			this.policy.mounts.setMode(hostPath, mode);
-			this.emit("mounts-changed", this.policy.mounts.list());
-			return updated;
+			return this.#setMountMode(current, mode);
 		});
 	}
 
@@ -195,7 +203,7 @@ export class BrokerWorkspace {
 			if (!current) throw new Error(`${hostPath} is not mounted`);
 			await (await this.#ensureBackend()).unmountExternal(current.guestPath);
 			this.policy.mounts.remove(hostPath);
-			this.emit("mounts-changed", this.policy.mounts.list());
+			this.#emitMountsChanged();
 			return current;
 		});
 	}
@@ -215,27 +223,15 @@ export class BrokerWorkspace {
 	}
 
 	async #translateToolRequest(request: BrokerToolParams): Promise<SandboxToolRequest> {
-		switch (request.name) {
-			case "bash":
-				return request;
-			case "read":
-				return { ...request, params: { ...request.params, path: await this.policy.prepareToolPath(request.params.path, "read-only") } };
-			case "write":
-				return { ...request, params: { ...request.params, path: await this.policy.prepareToolPath(request.params.path, "read-write") } };
-			case "edit":
-				return { ...request, params: { ...request.params, path: await this.policy.prepareToolPath(request.params.path, "read-write") } };
-			case "grep":
-				return { ...request, params: { ...request.params, path: await this.policy.prepareToolPath(request.params.path ?? ".", "read-only") } };
-			case "find":
-				return { ...request, params: { ...request.params, path: await this.policy.prepareToolPath(request.params.path ?? ".", "read-only") } };
-			case "ls":
-				return { ...request, params: { ...request.params, path: await this.policy.prepareToolPath(request.params.path ?? ".", "read-only") } };
-		}
+		if (request.name === "bash") return request;
+		const path = await this.policy.prepareToolPath(request.params.path ?? ".", TOOL_PATH_MODES[request.name]);
+		// Every non-bash tool input has a path, so overwriting it preserves the union member.
+		return { ...request, params: { ...request.params, path } } as SandboxToolRequest;
 	}
 
-	async #mountDirectory(path: string, mode: AccessMode): Promise<ExternalMount> {
+	async #mountDirectory(path: string, mode: AccessMode, fileRequestError: string): Promise<ExternalMount> {
 		const target = await resolveMountTarget(path, this.policy.homeDir);
-		if (target.isFileRequest) throw new Error(`External mount approval requires a directory: ${path}`);
+		if (target.isFileRequest) throw new Error(fileRequestError);
 		return this.#mountCanonicalDirectory(target.canonicalPath, mode);
 	}
 
@@ -244,7 +240,7 @@ export class BrokerWorkspace {
 		const containing = this.policy.mounts.findContaining(canonicalPath);
 		if (containing) {
 			if (mode === "read-write" && containing.mode === "read-only") {
-				return this.setMountModeWithinExclusive(containing, mode);
+				return this.#setMountMode(containing, mode);
 			}
 			return containing;
 		}
@@ -255,16 +251,20 @@ export class BrokerWorkspace {
 			this.policy.mounts.remove(mount.hostPath);
 			throw error;
 		}
-		this.emit("mounts-changed", this.policy.mounts.list());
+		this.#emitMountsChanged();
 		return mount;
 	}
 
-	async setMountModeWithinExclusive(current: ExternalMount, mode: AccessMode): Promise<ExternalMount> {
+	async #setMountMode(current: ExternalMount, mode: AccessMode): Promise<ExternalMount> {
 		const updated = { ...current, mode };
 		await (await this.#ensureBackend()).updateExternalMount(updated);
 		this.policy.mounts.setMode(current.hostPath, mode);
-		this.emit("mounts-changed", this.policy.mounts.list());
+		this.#emitMountsChanged();
 		return updated;
+	}
+
+	#emitMountsChanged(): void {
+		this.emit("mounts-changed", this.policy.mounts.list());
 	}
 
 	async #ensureBackend(): Promise<SandboxExecutionBackend<"gondolin">> {

@@ -13,11 +13,6 @@ export class MountRegistry {
 		return mount ? { ...mount } : undefined;
 	}
 
-	findByGuestPath(guestPath: string): ExternalMount | undefined {
-		const mount = [...this.#mounts.values()].find((candidate) => candidate.guestPath === guestPath);
-		return mount ? { ...mount } : undefined;
-	}
-
 	findContaining(hostPath: string): ExternalMount | undefined {
 		const candidates = [...this.#mounts.values()].filter((mount) => isInsidePath(mount.hostPath, hostPath));
 		const mount = candidates.sort((left, right) => right.hostPath.length - left.hostPath.length)[0];

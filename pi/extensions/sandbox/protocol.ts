@@ -12,6 +12,7 @@ export const BROKER_PROTOCOL_VERSION = 1 as const;
 export const BROKER_RECONNECT_GRACE_MS = 5_000;
 export const BROKER_START_TIMEOUT_MS = 30_000;
 export const BROKER_QUEUE_TIMEOUT_MS = 5 * 60_000;
+export const BROKER_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 
 export type BrokerAttachParams = {
 	[TBackend in SandboxBackendName]: {
@@ -180,4 +181,25 @@ export function parseFrame(line: string): BrokerClientFrame | BrokerServerFrame 
 	}
 	if (typeof value.type !== "string") throw new Error("Sandbox broker frame is missing a type");
 	return value as BrokerClientFrame | BrokerServerFrame;
+}
+
+/** Newline-delimited frame buffer shared by the broker server and client. */
+export class FrameBuffer {
+	#buffer = "";
+
+	/** Append a chunk and return every complete non-blank line it contains. */
+	push(chunk: string): string[] {
+		this.#buffer += chunk;
+		if (this.#buffer.length > BROKER_MAX_BUFFER_BYTES) {
+			throw new Error("Sandbox broker frame exceeds 16 MiB");
+		}
+		const lines: string[] = [];
+		while (true) {
+			const newline = this.#buffer.indexOf("\n");
+			if (newline < 0) return lines;
+			const line = this.#buffer.slice(0, newline);
+			this.#buffer = this.#buffer.slice(newline + 1);
+			if (line.trim()) lines.push(line);
+		}
+	}
 }

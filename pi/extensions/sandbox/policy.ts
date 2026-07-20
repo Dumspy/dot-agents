@@ -1,14 +1,14 @@
-import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { MountRegistry } from "./mounts.js";
 import {
 	assertMountAllowed,
+	canonicalizePotentialPath,
 	isInsidePath,
 	mountedHostPathToGuest,
 	resolveMountTarget,
 	workspaceHostPathToGuest,
 } from "./paths.js";
-import { GUEST_EXTERNAL_ROOT, GUEST_WORKSPACE, type AccessMode, type ExternalMount } from "./types.js";
+import { GUEST_EXTERNAL_ROOT, GUEST_WORKSPACE, type AccessMode } from "./types.js";
 
 export class ExternalAccessRequiredError extends Error {
 	constructor(
@@ -20,27 +20,6 @@ export class ExternalAccessRequiredError extends Error {
 	) {
 		super(`External ${requestedMode} access is required for ${hostPath}`);
 		this.name = "ExternalAccessRequiredError";
-	}
-}
-
-async function canonicalizePotentialPath(value: string): Promise<{ path: string; exists: boolean }> {
-	try {
-		return { path: await realpath(value), exists: true };
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		let parent = path.dirname(value);
-		const missing: string[] = [path.basename(value)];
-		while (parent !== path.dirname(parent)) {
-			try {
-				const canonicalParent = await realpath(parent);
-				return { path: path.join(canonicalParent, ...missing.reverse()), exists: false };
-			} catch (parentError) {
-				if ((parentError as NodeJS.ErrnoException).code !== "ENOENT") throw parentError;
-				missing.push(path.basename(parent));
-				parent = path.dirname(parent);
-			}
-		}
-		throw error;
 	}
 }
 
@@ -103,20 +82,4 @@ export class SandboxPolicy {
 		);
 	}
 
-	async addExplicitMount(input: string, mode: AccessMode): Promise<ExternalMount> {
-		const target = await resolveMountTarget(input, this.homeDir);
-		if (target.isFileRequest) throw new Error("/mount requires a directory path, not a file");
-		assertMountAllowed(target.canonicalPath, this.workspace, this.homeDir);
-		return this.mounts.add(target.canonicalPath, mode);
-	}
-
-	approveExternal(request: ExternalAccessRequiredError, mode: AccessMode): ExternalMount {
-		assertMountAllowed(request.mountRoot, this.workspace, this.homeDir);
-		return this.mounts.add(request.mountRoot, mode);
-	}
-
-	async validateMountStillExists(mount: ExternalMount): Promise<void> {
-		const stats = await stat(mount.hostPath);
-		if (!stats.isDirectory()) throw new Error(`External mount is no longer a directory: ${mount.hostPath}`);
-	}
 }

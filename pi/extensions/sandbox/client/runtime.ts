@@ -64,18 +64,9 @@ function processAlive(pid: number): boolean {
 	}
 }
 
-async function lockOwnerAlive(lockPath: string): Promise<boolean> {
+async function readPidFile(filePath: string): Promise<number | undefined> {
 	try {
-		const value = JSON.parse(await readFile(lockPath, "utf8")) as { pid?: unknown };
-		return typeof value.pid === "number" && processAlive(value.pid);
-	} catch {
-		return false;
-	}
-}
-
-async function brokerPid(pidFile: string): Promise<number | undefined> {
-	try {
-		const parsed: unknown = JSON.parse(await readFile(pidFile, "utf8"));
+		const parsed: unknown = JSON.parse(await readFile(filePath, "utf8"));
 		if (!parsed || typeof parsed !== "object") return undefined;
 		const pid = (parsed as { pid?: unknown }).pid;
 		return typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
@@ -84,8 +75,13 @@ async function brokerPid(pidFile: string): Promise<number | undefined> {
 	}
 }
 
+async function lockOwnerAlive(lockPath: string): Promise<boolean> {
+	const pid = await readPidFile(lockPath);
+	return pid !== undefined && processAlive(pid);
+}
+
 async function cleanStaleBroker(paths: WorkspaceRuntimePaths): Promise<"running" | "absent"> {
-	const pid = await brokerPid(paths.pidFile);
+	const pid = await readPidFile(paths.pidFile);
 	if (pid === undefined) return "absent";
 	if (processAlive(pid)) return "running";
 	try {

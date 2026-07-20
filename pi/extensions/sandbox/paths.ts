@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import picomatch from "picomatch";
@@ -16,6 +17,48 @@ const SYSTEM_MOUNT_ROOTS = ["/dev", "/proc", "/sys", "/run"];
 
 export function stripAtPrefix(value: string): string {
 	return value.startsWith("@") ? value.slice(1) : value;
+}
+
+/**
+ * Resolve symlinks for the deepest existing ancestor of a possibly missing
+ * path, reporting whether the full path itself exists.
+ */
+export async function canonicalizePotentialPath(value: string): Promise<{ path: string; exists: boolean }> {
+	try {
+		return { path: await realpath(value), exists: true };
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		let parent = path.dirname(value);
+		const missing: string[] = [path.basename(value)];
+		while (parent !== path.dirname(parent)) {
+			try {
+				const canonicalParent = await realpath(parent);
+				return { path: path.join(canonicalParent, ...missing.reverse()), exists: false };
+			} catch (parentError) {
+				if ((parentError as NodeJS.ErrnoException).code !== "ENOENT") throw parentError;
+				missing.push(path.basename(parent));
+				parent = path.dirname(parent);
+			}
+		}
+		throw error;
+	}
+}
+
+/** Synchronous variant of {@link canonicalizePotentialPath} for host-mode guards. */
+export function canonicalizePotentialPathSync(value: string): string {
+	let candidate = path.resolve(value);
+	const missingSegments: string[] = [];
+	while (true) {
+		try {
+			return path.join(realpathSync(candidate), ...missingSegments.reverse());
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			const parent = path.dirname(candidate);
+			if (parent === candidate) return path.resolve(value);
+			missingSegments.push(path.basename(candidate));
+			candidate = parent;
+		}
+	}
 }
 
 export function isInsidePath(root: string, value: string): boolean {
@@ -105,14 +148,16 @@ export function guestMountPath(canonicalPath: string, existingGuestPaths: Iterab
 	throw new Error(`Could not allocate a unique guest mount path for ${canonicalPath}`);
 }
 
+function hostPathToGuest(hostRoot: string, guestRoot: string, hostPath: string, description: string): string {
+	if (!isInsidePath(hostRoot, hostPath)) throw new Error(`${hostPath} is outside ${description} ${hostRoot}`);
+	const relative = path.relative(hostRoot, hostPath).split(path.sep).join(path.posix.sep);
+	return relative ? path.posix.join(guestRoot, relative) : guestRoot;
+}
+
 export function workspaceHostPathToGuest(workspace: string, hostPath: string): string {
-	if (!isInsidePath(workspace, hostPath)) throw new Error(`${hostPath} is outside workspace ${workspace}`);
-	const relative = path.relative(workspace, hostPath).split(path.sep).join(path.posix.sep);
-	return relative ? path.posix.join(GUEST_WORKSPACE, relative) : GUEST_WORKSPACE;
+	return hostPathToGuest(workspace, GUEST_WORKSPACE, hostPath, "workspace");
 }
 
 export function mountedHostPathToGuest(mountHostPath: string, mountGuestPath: string, hostPath: string): string {
-	if (!isInsidePath(mountHostPath, hostPath)) throw new Error(`${hostPath} is outside mount ${mountHostPath}`);
-	const relative = path.relative(mountHostPath, hostPath).split(path.sep).join(path.posix.sep);
-	return relative ? path.posix.join(mountGuestPath, relative) : mountGuestPath;
+	return hostPathToGuest(mountHostPath, mountGuestPath, hostPath, "mount");
 }

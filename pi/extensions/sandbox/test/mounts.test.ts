@@ -33,7 +33,6 @@ describe("MountRegistry", () => {
 	it("removes and clears mounts", () => {
 		const registry = new MountRegistry();
 		const mount = registry.add("/tmp/project", "read-only");
-		expect(registry.findByGuestPath(mount.guestPath)).toEqual(mount);
 		expect(registry.remove("/tmp/project")).toEqual(mount);
 		expect(registry.list()).toEqual([]);
 		registry.add("/tmp/again", "read-only");

@@ -86,51 +86,51 @@ function rejectUnknownKeys(value: Record<string, unknown>, allowed: readonly str
 	if (unknown.length > 0) throw new Error(`${fieldName} contains unsupported key(s): ${unknown.join(", ")}`);
 }
 
+const GONDOLIN_KEYS = ["image", "startupCommands", "cpus", "memoryBytes", "memory", "rootfsBytes", "rootfsSize"] as const;
+
+/** Validate a gondolin config section, returning only the fields it explicitly sets. */
+function parseGondolinSection(value: unknown, source: string): Partial<GondolinConfig> {
+	const gondolin = asObject(value, source);
+	rejectUnknownKeys(gondolin, GONDOLIN_KEYS, source);
+	if (gondolin.memory !== undefined && gondolin.memoryBytes !== undefined) {
+		throw new Error(`${source} cannot specify both memory and memoryBytes`);
+	}
+	if (gondolin.rootfsSize !== undefined && gondolin.rootfsBytes !== undefined) {
+		throw new Error(`${source} cannot specify both rootfsSize and rootfsBytes`);
+	}
+	const overlay: Partial<GondolinConfig> = {};
+	if (gondolin.image !== undefined) overlay.image = optionalString(gondolin.image, `${source}.image`);
+	if (gondolin.startupCommands !== undefined) {
+		overlay.startupCommands = stringArray(gondolin.startupCommands, `${source}.startupCommands`);
+	}
+	if (gondolin.cpus !== undefined) {
+		overlay.cpus = boundedInteger(gondolin.cpus, 1, RESOURCE_LIMITS.cpus, `${source}.cpus`);
+	}
+	if (gondolin.memory !== undefined || gondolin.memoryBytes !== undefined) {
+		overlay.memoryBytes = parseByteSize(gondolin.memory ?? gondolin.memoryBytes, `${source}.memory`);
+		if (overlay.memoryBytes > RESOURCE_LIMITS.memoryBytes) throw new Error(`${source}.memory exceeds 32 GiB`);
+	}
+	if (gondolin.rootfsSize !== undefined || gondolin.rootfsBytes !== undefined) {
+		overlay.rootfsBytes = parseByteSize(gondolin.rootfsSize ?? gondolin.rootfsBytes, `${source}.rootfsSize`);
+		if (overlay.rootfsBytes > RESOURCE_LIMITS.rootfsBytes) throw new Error(`${source}.rootfsSize exceeds 100 GiB`);
+	}
+	return overlay;
+}
+
 export function parseSandboxConfig(value: unknown, source = "sandbox config"): SandboxConfig {
 	const root = asObject(value, source);
 	rejectUnknownKeys(root, ["version", "backend", "gondolin", "protectedPaths"], source);
 	if (root.version !== undefined && root.version !== 1) throw new Error(`${source}.version must be 1`);
 	if (root.backend !== undefined && root.backend !== "gondolin") throw new Error(`${source}.backend must be "gondolin"`);
 
-	const gondolin = root.gondolin === undefined ? {} : asObject(root.gondolin, `${source}.gondolin`);
-	rejectUnknownKeys(
-		gondolin,
-		["image", "startupCommands", "cpus", "memoryBytes", "memory", "rootfsBytes", "rootfsSize"],
-		`${source}.gondolin`,
-	);
-	if (gondolin.memory !== undefined && gondolin.memoryBytes !== undefined) {
-		throw new Error(`${source}.gondolin cannot specify both memory and memoryBytes`);
-	}
-	if (gondolin.rootfsSize !== undefined && gondolin.rootfsBytes !== undefined) {
-		throw new Error(`${source}.gondolin cannot specify both rootfsSize and rootfsBytes`);
-	}
-
-	const memoryBytes =
-		gondolin.memory === undefined && gondolin.memoryBytes === undefined
-			? DEFAULT_SANDBOX_CONFIG.gondolin.memoryBytes
-			: parseByteSize(gondolin.memory ?? gondolin.memoryBytes, `${source}.gondolin.memory`);
-	const rootfsBytes =
-		gondolin.rootfsSize === undefined && gondolin.rootfsBytes === undefined
-			? DEFAULT_SANDBOX_CONFIG.gondolin.rootfsBytes
-			: parseByteSize(gondolin.rootfsSize ?? gondolin.rootfsBytes, `${source}.gondolin.rootfsSize`);
-
-	if (memoryBytes > RESOURCE_LIMITS.memoryBytes) throw new Error(`${source}.gondolin.memory exceeds 32 GiB`);
-	if (rootfsBytes > RESOURCE_LIMITS.rootfsBytes) throw new Error(`${source}.gondolin.rootfsSize exceeds 100 GiB`);
-
+	const overlay = root.gondolin === undefined ? {} : parseGondolinSection(root.gondolin, `${source}.gondolin`);
 	return {
 		version: 1,
 		backend: "gondolin",
 		gondolin: {
-			image: optionalString(gondolin.image, `${source}.gondolin.image`),
-			startupCommands: stringArray(gondolin.startupCommands, `${source}.gondolin.startupCommands`),
-			cpus: boundedInteger(
-				gondolin.cpus,
-				DEFAULT_SANDBOX_CONFIG.gondolin.cpus,
-				RESOURCE_LIMITS.cpus,
-				`${source}.gondolin.cpus`,
-			),
-			memoryBytes,
-			rootfsBytes,
+			...DEFAULT_SANDBOX_CONFIG.gondolin,
+			...overlay,
+			startupCommands: [...(overlay.startupCommands ?? DEFAULT_SANDBOX_CONFIG.gondolin.startupCommands)],
 		},
 		protectedPaths: stringArray(root.protectedPaths, `${source}.protectedPaths`),
 	};
@@ -140,37 +140,8 @@ export function parseProjectSandboxConfig(value: unknown, source = "project sand
 	const root = asObject(value, source);
 	rejectUnknownKeys(root, ["version", "gondolin", "protectedPaths"], source);
 	if (root.version !== undefined && root.version !== 1) throw new Error(`${source}.version must be 1`);
-	const gondolin = root.gondolin === undefined ? undefined : asObject(root.gondolin, `${source}.gondolin`);
-	if (!gondolin) return { protectedPaths: stringArray(root.protectedPaths, `${source}.protectedPaths`) };
-	rejectUnknownKeys(
-		gondolin,
-		["image", "startupCommands", "cpus", "memoryBytes", "memory", "rootfsBytes", "rootfsSize"],
-		`${source}.gondolin`,
-	);
-	if (gondolin.memory !== undefined && gondolin.memoryBytes !== undefined) {
-		throw new Error(`${source}.gondolin cannot specify both memory and memoryBytes`);
-	}
-	if (gondolin.rootfsSize !== undefined && gondolin.rootfsBytes !== undefined) {
-		throw new Error(`${source}.gondolin cannot specify both rootfsSize and rootfsBytes`);
-	}
-	const overlay: Partial<GondolinConfig> = {};
-	if (gondolin.image !== undefined) overlay.image = optionalString(gondolin.image, `${source}.gondolin.image`);
-	if (gondolin.startupCommands !== undefined) {
-		overlay.startupCommands = stringArray(gondolin.startupCommands, `${source}.gondolin.startupCommands`);
-	}
-	if (gondolin.cpus !== undefined) {
-		overlay.cpus = boundedInteger(gondolin.cpus, 1, RESOURCE_LIMITS.cpus, `${source}.gondolin.cpus`);
-	}
-	if (gondolin.memory !== undefined || gondolin.memoryBytes !== undefined) {
-		overlay.memoryBytes = parseByteSize(gondolin.memory ?? gondolin.memoryBytes, `${source}.gondolin.memory`);
-		if (overlay.memoryBytes > RESOURCE_LIMITS.memoryBytes) throw new Error(`${source}.gondolin.memory exceeds 32 GiB`);
-	}
-	if (gondolin.rootfsSize !== undefined || gondolin.rootfsBytes !== undefined) {
-		overlay.rootfsBytes = parseByteSize(gondolin.rootfsSize ?? gondolin.rootfsBytes, `${source}.gondolin.rootfsSize`);
-		if (overlay.rootfsBytes > RESOURCE_LIMITS.rootfsBytes) throw new Error(`${source}.gondolin.rootfsSize exceeds 100 GiB`);
-	}
 	return {
-		gondolin: overlay,
+		gondolin: root.gondolin === undefined ? undefined : parseGondolinSection(root.gondolin, `${source}.gondolin`),
 		protectedPaths: stringArray(root.protectedPaths, `${source}.protectedPaths`),
 	};
 }

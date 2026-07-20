@@ -75,16 +75,18 @@ export function createGondolinEditOps(getVm: () => VM): EditOperations {
 	return { readFile: read.readFile, access: read.access, writeFile: write.writeFile };
 }
 
+async function guestExists(getVm: () => VM, filePath: string): Promise<boolean> {
+	try {
+		await getVm().fs.access(normalizeGuestPath(filePath));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function createGondolinLsOps(getVm: () => VM): LsOperations {
 	return {
-		exists: async (filePath) => {
-			try {
-				await getVm().fs.access(normalizeGuestPath(filePath));
-				return true;
-			} catch {
-				return false;
-			}
-		},
+		exists: (filePath) => guestExists(getVm, filePath),
 		stat: async (filePath) => getVm().fs.stat(normalizeGuestPath(filePath)),
 		readdir: async (directoryPath) => getVm().fs.listDir(normalizeGuestPath(directoryPath)),
 	};
@@ -130,14 +132,7 @@ function matchesGlob(relativePath: string, pattern: string): boolean {
 
 export function createGondolinFindOps(getVm: () => VM): FindOperations {
 	return {
-		exists: async (filePath) => {
-			try {
-				await getVm().fs.access(normalizeGuestPath(filePath));
-				return true;
-			} catch {
-				return false;
-			}
-		},
+		exists: (filePath) => guestExists(getVm, filePath),
 		glob: async (pattern, cwd, options) => {
 			const vm = getVm();
 			const root = normalizeGuestPath(cwd);

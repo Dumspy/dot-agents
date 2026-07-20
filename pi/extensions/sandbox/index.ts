@@ -22,6 +22,7 @@ import { BrokerApprovalRequiredError, BrokerClient } from "./client/broker-clien
 import { loadSandboxConfig } from "./config.js";
 import { assertHostPathAllowed, hostCommandDenial } from "./host-guards.js";
 import type { BrokerEventFrame, BrokerSnapshot } from "./protocol.js";
+import { errorMessage } from "./utils.js";
 import {
 	GUEST_WORKSPACE,
 	type AccessMode,
@@ -34,6 +35,16 @@ import {
 
 const STATUS_KEY = "sandbox";
 
+type LocalToolMap = {
+	read: ReturnType<typeof createReadTool>;
+	write: ReturnType<typeof createWriteTool>;
+	edit: ReturnType<typeof createEditTool>;
+	bash: ReturnType<typeof createBashTool>;
+	grep: ReturnType<typeof createGrepTool>;
+	find: ReturnType<typeof createFindTool>;
+	ls: ReturnType<typeof createLsTool>;
+};
+
 function brokerExecutablePath(): string {
 	const installed = path.join(getAgentDir(), "libexec", "sandbox-broker", "broker", "main.js");
 	if (existsSync(installed)) return installed;
@@ -44,10 +55,6 @@ const REQUEST_EXTERNAL_PARAMS = Type.Object({
 	mode: StringEnum(["read-only", "read-write"] as const, { description: "Requested access level" }),
 	reason: Type.Optional(Type.String({ description: "Short explanation shown to the user" })),
 });
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 function snapshotStatus(snapshot: BrokerSnapshot | undefined, hostMode: boolean, connectionError?: string): string {
 	if (hostMode) return "SANDBOX: OFF";
@@ -317,83 +324,46 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 		return { systemPrompt: `${event.systemPrompt}\n\n${modeNotice}` };
 	});
 
-	pi.registerTool({
-		...localRead,
-		async execute(id, params, signal, onUpdate, ctx) {
-			if (hostMode) {
-				assertHostPath(params.path, "read-only");
-				return localRead.execute(id, params, signal, onUpdate);
-			}
-			return brokerTool("read", id, params, signal, onUpdate, ctx);
-		},
-	});
+	/**
+	 * Register a host tool that reroutes through the broker while the sandbox is
+	 * active, and falls back to guarded local execution in host mode.
+	 */
+	function registerSandboxedTool<TName extends SandboxToolName>(
+		name: TName,
+		local: LocalToolMap[TName],
+		guardHost: (params: SandboxToolInputMap[TName]) => void,
+	): void {
+		const definition = {
+			...local,
+			async execute(
+				id: string,
+				params: SandboxToolInputMap[TName],
+				signal: AbortSignal | undefined,
+				onUpdate: ((update: SandboxToolResultMap[TName]) => void) | undefined,
+				ctx: ExtensionContext,
+			) {
+				if (hostMode) {
+					guardHost(params);
+					return (local as LocalToolMap[SandboxToolName]).execute(id, params as never, signal, onUpdate as never);
+				}
+				return brokerTool(name, id, params, signal, onUpdate, ctx);
+			},
+		};
+		// The generic name/local/params pairing is enforced at each call site; the
+		// definition itself cannot be expressed without a concrete schema type.
+		pi.registerTool(definition as unknown as Parameters<ExtensionAPI["registerTool"]>[0]);
+	}
 
-	pi.registerTool({
-		...localWrite,
-		async execute(id, params, signal, onUpdate, ctx) {
-			if (hostMode) {
-				assertHostPath(params.path, "read-write");
-				return localWrite.execute(id, params, signal, onUpdate);
-			}
-			return brokerTool("write", id, params, signal, onUpdate, ctx);
-		},
+	registerSandboxedTool("read", localRead, (params) => assertHostPath(params.path, "read-only"));
+	registerSandboxedTool("write", localWrite, (params) => assertHostPath(params.path, "read-write"));
+	registerSandboxedTool("edit", localEdit, (params) => assertHostPath(params.path, "read-write"));
+	registerSandboxedTool("bash", localBash, (params) => {
+		const denial = hostCommandDenial(params.command, homeDir);
+		if (denial) throw new Error(denial);
 	});
-
-	pi.registerTool({
-		...localEdit,
-		async execute(id, params, signal, onUpdate, ctx) {
-			if (hostMode) {
-				assertHostPath(params.path, "read-write");
-				return localEdit.execute(id, params, signal, onUpdate);
-			}
-			return brokerTool("edit", id, params, signal, onUpdate, ctx);
-		},
-	});
-
-	pi.registerTool({
-		...localBash,
-		async execute(id, params, signal, onUpdate, ctx) {
-			if (hostMode) {
-				const denial = hostCommandDenial(params.command, homeDir);
-				if (denial) throw new Error(denial);
-				return localBash.execute(id, params, signal, onUpdate);
-			}
-			return brokerTool("bash", id, params, signal, onUpdate, ctx);
-		},
-	});
-
-	pi.registerTool({
-		...localLs,
-		async execute(id, params, signal, onUpdate, ctx) {
-			if (hostMode) {
-				assertHostPath(params.path ?? ".", "read-only");
-				return localLs.execute(id, params, signal, onUpdate);
-			}
-			return brokerTool("ls", id, params, signal, onUpdate, ctx);
-		},
-	});
-
-	pi.registerTool({
-		...localFind,
-		async execute(id, params, signal, onUpdate, ctx) {
-			if (hostMode) {
-				assertHostPath(params.path ?? ".", "read-only");
-				return localFind.execute(id, params, signal, onUpdate);
-			}
-			return brokerTool("find", id, params, signal, onUpdate, ctx);
-		},
-	});
-
-	pi.registerTool({
-		...localGrep,
-		async execute(id, params, signal, onUpdate, ctx) {
-			if (hostMode) {
-				assertHostPath(params.path ?? ".", "read-only");
-				return localGrep.execute(id, params, signal, onUpdate);
-			}
-			return brokerTool("grep", id, params, signal, onUpdate, ctx);
-		},
-	});
+	registerSandboxedTool("ls", localLs, (params) => assertHostPath(params.path ?? ".", "read-only"));
+	registerSandboxedTool("find", localFind, (params) => assertHostPath(params.path ?? ".", "read-only"));
+	registerSandboxedTool("grep", localGrep, (params) => assertHostPath(params.path ?? ".", "read-only"));
 
 	pi.registerTool({
 		name: "request_external_directory",
