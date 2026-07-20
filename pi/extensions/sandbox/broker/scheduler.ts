@@ -35,16 +35,23 @@ export class WorkspaceScheduler {
 		}
 	}
 
+	/** Remove a queued waiter and detach its timer and abort listener. */
+	#removeWaiter(waiter: Waiter): boolean {
+		const index = this.#waiters.indexOf(waiter);
+		if (index < 0) return false;
+		this.#waiters.splice(index, 1);
+		if (waiter.timer) clearTimeout(waiter.timer);
+		if (waiter.signal && waiter.onAbort) waiter.signal.removeEventListener("abort", waiter.onAbort);
+		return true;
+	}
+
 	#acquire(mode: Waiter["mode"], signal?: AbortSignal): Promise<() => void> {
 		if (signal?.aborted) return Promise.reject(new Error("aborted"));
 		return new Promise((resolve, reject) => {
 			const waiter: Waiter = { mode, resolve, reject, signal };
 			if (signal) {
 				waiter.onAbort = () => {
-					const index = this.#waiters.indexOf(waiter);
-					if (index < 0) return;
-					this.#waiters.splice(index, 1);
-					if (waiter.timer) clearTimeout(waiter.timer);
+					if (!this.#removeWaiter(waiter)) return;
 					reject(new Error("aborted"));
 					this.#drain();
 				};
@@ -52,10 +59,7 @@ export class WorkspaceScheduler {
 			}
 			if (this.queueTimeoutMs > 0) {
 				waiter.timer = setTimeout(() => {
-					const index = this.#waiters.indexOf(waiter);
-					if (index < 0) return;
-					this.#waiters.splice(index, 1);
-					if (waiter.signal && waiter.onAbort) waiter.signal.removeEventListener("abort", waiter.onAbort);
+					if (!this.#removeWaiter(waiter)) return;
 					reject(new Error(`Sandbox operation queue timed out after ${this.queueTimeoutMs}ms`));
 					this.#drain();
 				}, this.queueTimeoutMs);

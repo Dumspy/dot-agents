@@ -155,9 +155,7 @@ export function mergeSandboxConfig(globalConfig: SandboxConfig, projectConfig?: 
 		gondolin: {
 			...globalConfig.gondolin,
 			...projectConfig.gondolin,
-			startupCommands: projectConfig.gondolin?.startupCommands
-				? [...projectConfig.gondolin.startupCommands]
-				: [...globalConfig.gondolin.startupCommands],
+			startupCommands: [...(projectConfig.gondolin?.startupCommands ?? globalConfig.gondolin.startupCommands)],
 		},
 		protectedPaths: [...new Set([...globalConfig.protectedPaths, ...(projectConfig.protectedPaths ?? [])])],
 	};

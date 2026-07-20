@@ -48,9 +48,7 @@ export class SandboxPolicy {
 			const guestPath = path.posix.resolve(raw.replaceAll("\\", "/"));
 			if (guestPath === GUEST_EXTERNAL_ROOT) return guestPath;
 			if (guestPath.startsWith(`${GUEST_EXTERNAL_ROOT}/`)) {
-				const mount = this.mounts.list().find((candidate) =>
-					guestPath === candidate.guestPath || guestPath.startsWith(`${candidate.guestPath}/`),
-				);
+				const mount = this.mounts.findByGuestPathPrefix(guestPath);
 				if (!mount) throw new Error(`External guest path is not mounted: ${guestPath}`);
 				if (requestedMode === "read-write" && mount.mode !== "read-write") {
 					throw new Error(`${mount.hostPath} is mounted read-only; use /mounts to change its access mode`);

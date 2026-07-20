@@ -21,11 +21,12 @@ import { parseMountArguments } from "./command-line.js";
 import { BrokerApprovalRequiredError, BrokerClient } from "./client/broker-client.js";
 import { loadSandboxConfig } from "./config.js";
 import { assertHostPathAllowed, hostCommandDenial } from "./host-guards.js";
-import type { BrokerEventFrame, BrokerSnapshot } from "./protocol.js";
+import type { ApprovalRequiredData, BrokerEventFrame, BrokerSnapshot } from "./protocol.js";
 import { createSerializer, errorMessage } from "./utils.js";
 import {
 	GUEST_WORKSPACE,
 	type AccessMode,
+	type ExternalMount,
 	type SandboxBackendName,
 	type SandboxConfig,
 	type SandboxToolInputMap,
@@ -55,6 +56,10 @@ const REQUEST_EXTERNAL_PARAMS = Type.Object({
 	mode: StringEnum(["read-only", "read-write"] as const, { description: "Requested access level" }),
 	reason: Type.Optional(Type.String({ description: "Short explanation shown to the user" })),
 });
+
+function formatMount(mount: ExternalMount): string {
+	return `${mount.hostPath} -> ${mount.guestPath} (${mount.mode})`;
+}
 
 function snapshotStatus(snapshot: BrokerSnapshot | undefined, hostMode: boolean, connectionError?: string): string {
 	if (hostMode) return "SANDBOX: OFF";
@@ -179,6 +184,48 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 		return connectPromise;
 	}
 
+	/** Prompt the user once and approve or deny the broker's pending external-access request. */
+	async function promptAndApprove(
+		active: BrokerClient,
+		approval: ApprovalRequiredData,
+		ctx: ExtensionContext,
+		reason?: string,
+	): Promise<void> {
+		if (!ctx.hasUI) {
+			await active.denyApproval(approval.approvalId).catch(() => undefined);
+			throw new Error(`External access requires interactive approval: ${approval.mountRoot}`);
+		}
+		let choice: string | undefined;
+		try {
+			choice = await ctx.ui.select(
+				[
+					approval.upgrade ? "Upgrade shared external directory access" : "External directory access",
+					`Host path: ${approval.hostPath}`,
+					`Directory: ${approval.mountRoot}`,
+					`Requested: ${approval.requestedMode}`,
+					`Guest path: ${approval.guestPath}`,
+					reason ? `Reason: ${reason}` : "",
+					approval.fileRequest ? `The file's parent directory will be exposed: ${approval.mountRoot}` : "",
+					"This mount is shared by every sandboxed Pi process in this workspace.",
+				]
+					.filter(Boolean)
+					.join("\n"),
+				["Allow read-only", "Allow read-write", "Deny"],
+			);
+		} catch (uiError) {
+			await active.denyApproval(approval.approvalId).catch(() => undefined);
+			throw uiError;
+		}
+		if (choice === "Deny" || choice === undefined) {
+			await active.denyApproval(approval.approvalId);
+			throw new Error(`External directory access denied: ${approval.mountRoot}`);
+		}
+		const mode: AccessMode = choice === "Allow read-write" ? "read-write" : "read-only";
+		const mount = await active.approveMount(approval.approvalId, approval.mountRoot, mode);
+		await refreshSnapshot(active);
+		ctx.ui.notify(`${mount.hostPath} mounted ${mount.mode} at ${mount.guestPath}`, "info");
+	}
+
 	async function withApproval<T>(operation: (active: BrokerClient) => Promise<T>, ctx: ExtensionContext, reason?: string): Promise<T> {
 		const active = await connectBroker(ctx);
 		try {
@@ -188,46 +235,15 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 			return serialApproval(async () => {
 				const current = await connectBroker(ctx);
 				try {
+					// Another Pi process may have approved the mount while we queued.
 					return await operation(current);
 				} catch (retryError) {
 					if (!(retryError instanceof BrokerApprovalRequiredError)) throw retryError;
-					const approval = retryError.approval;
-					if (!ctx.hasUI) {
-						await current.denyApproval(approval.approvalId).catch(() => undefined);
-						throw new Error(`External access requires interactive approval: ${approval.mountRoot}`);
-					}
-					let choice: string | undefined;
-					try {
-						choice = await ctx.ui.select(
-							[
-								approval.upgrade ? "Upgrade shared external directory access" : "External directory access",
-								`Host path: ${approval.hostPath}`,
-								`Directory: ${approval.mountRoot}`,
-								`Requested: ${approval.requestedMode}`,
-								`Guest path: ${approval.guestPath}`,
-								reason ? `Reason: ${reason}` : "",
-								approval.fileRequest ? `The file's parent directory will be exposed: ${approval.mountRoot}` : "",
-								"This mount is shared by every sandboxed Pi process in this workspace.",
-							]
-								.filter(Boolean)
-								.join("\n"),
-							["Allow read-only", "Allow read-write", "Deny"],
-						);
-					} catch (uiError) {
-						await current.denyApproval(approval.approvalId).catch(() => undefined);
-						throw uiError;
-					}
-					if (choice === "Deny" || choice === undefined) {
-						await current.denyApproval(approval.approvalId);
-						throw new Error(`External directory access denied: ${approval.mountRoot}`);
-					}
-						const mode: AccessMode = choice === "Allow read-write" ? "read-write" : "read-only";
-					const mount = await current.approveMount(approval.approvalId, approval.mountRoot, mode);
-					await refreshSnapshot(current);
-					ctx.ui.notify(`${mount.hostPath} mounted ${mount.mode} at ${mount.guestPath}`, "info");
+					await promptAndApprove(current, retryError.approval, ctx, reason);
 					try {
 						return await operation(current);
 					} catch (postApprovalError) {
+						// A different mount still needs approval; release its reservation.
 						if (postApprovalError instanceof BrokerApprovalRequiredError) {
 							await current.denyApproval(postApprovalError.approval.approvalId).catch(() => undefined);
 						}
@@ -247,7 +263,7 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 		if (attached.mounts.length === 0) lines.push("External mounts: none");
 		else {
 			lines.push("Shared external mounts:");
-			for (const mount of attached.mounts) lines.push(`  ${mount.hostPath} -> ${mount.guestPath} (${mount.mode})`);
+			for (const mount of attached.mounts) lines.push(`  ${formatMount(mount)}`);
 		}
 		return lines.join("\n");
 	}
@@ -416,7 +432,7 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 					`Workspace: ${workspace} -> ${GUEST_WORKSPACE}`,
 					`Attached Pi processes: ${current.attachedProcesses}`,
 					...(current.backend.error ? [`Error: ${current.backend.error}`] : []),
-					...current.mounts.map((mount) => `${mount.hostPath} -> ${mount.guestPath} (${mount.mode})`),
+					...current.mounts.map(formatMount),
 				].join("\n"),
 				current.backend.state === "failed" ? "error" : "info",
 			);

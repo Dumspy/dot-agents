@@ -169,9 +169,7 @@ export class BrokerWorkspace {
 	resolvePath(path: string, mode: AccessMode): Promise<BrokerResolvedPath> {
 		return this.scheduler.runShared(async () => {
 			const guestPath = await this.policy.prepareToolPath(path, mode);
-			const mount = this.policy.mounts
-				.list()
-				.find((candidate) => guestPath === candidate.guestPath || guestPath.startsWith(`${candidate.guestPath}/`));
+			const mount = this.policy.mounts.findByGuestPathPrefix(guestPath);
 			return { guestPath, mode: mount?.mode ?? "read-write" };
 		});
 	}
@@ -270,24 +268,21 @@ export class BrokerWorkspace {
 	async #ensureBackend(): Promise<SandboxExecutionBackend<"gondolin">> {
 		const backend = this.#backend;
 		if (!backend) throw new Error("Workspace sandbox has not started");
-		if (backend.status().state === "running" && !backend.isAlive()) {
+		const state = () => backend.status().state;
+		if (state() === "running" && !backend.isAlive()) {
 			backend.markFailed(new Error("Sandbox backend process exited"));
 			this.emit("backend-failed", backend.status());
 		}
-		if (backend.status().state === "failed" || backend.status().state === "recovering") {
-			if (!this.#recovery) {
-				this.#recovery = backend
-					.recover()
-					.then(() => this.emit("backend-recovered", backend.status()))
-					.finally(() => {
-						this.#recovery = undefined;
-					});
-			}
+		if (state() === "failed" || state() === "recovering") {
+			this.#recovery ??= backend
+				.recover()
+				.then(() => this.emit("backend-recovered", backend.status()))
+				.finally(() => {
+					this.#recovery = undefined;
+				});
 			await this.#recovery;
 		}
-		if (backend.status().state !== "running") {
-			throw new Error(`Sandbox backend is not available (${backend.status().state})`);
-		}
+		if (state() !== "running") throw new Error(`Sandbox backend is not available (${state()})`);
 		return backend;
 	}
 }

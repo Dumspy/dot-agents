@@ -183,26 +183,45 @@ export class WorkspaceBrokerServer extends EventEmitter {
 			this.#respond(socket, frame.id, true, result);
 		} catch (error) {
 			if (error instanceof ExternalAccessRequiredError && state.leaseToken) {
-				try {
-					const reservation = await this.#acquireApproval(state.leaseToken, controller.signal);
-					try {
-						const result = await this.#dispatch(socket, state, frame, controller.signal);
-						this.#releaseApproval(reservation.id, state.leaseToken);
-						this.#respond(socket, frame.id, true, result);
-					} catch (retryError) {
-						if (retryError instanceof ExternalAccessRequiredError) {
-							this.#respond(socket, frame.id, false, undefined, retryError, reservation.id);
-						} else {
-							this.#releaseApproval(reservation.id, state.leaseToken);
-							this.#respond(socket, frame.id, false, undefined, retryError);
-						}
-					}
-				} catch (queueError) {
-					this.#respond(socket, frame.id, false, undefined, queueError);
-				}
-			} else this.#respond(socket, frame.id, false, undefined, error);
+				await this.#retryWithApproval(socket, state, frame, controller.signal);
+			} else {
+				this.#respond(socket, frame.id, false, undefined, error);
+			}
 		} finally {
 			state.requests.delete(frame.id);
+		}
+	}
+
+	/**
+	 * Retry a request while holding the workspace-wide approval slot. When the
+	 * retry still needs approval, the reservation stays active so the client can
+	 * explicitly approve or deny it.
+	 */
+	async #retryWithApproval(
+		socket: Socket,
+		state: ConnectionState,
+		frame: BrokerRequestFrame,
+		signal: AbortSignal,
+	): Promise<void> {
+		const leaseToken = state.leaseToken!;
+		let reservation: ApprovalReservation;
+		try {
+			reservation = await this.#acquireApproval(leaseToken, signal);
+		} catch (queueError) {
+			this.#respond(socket, frame.id, false, undefined, queueError);
+			return;
+		}
+		try {
+			const result = await this.#dispatch(socket, state, frame, signal);
+			this.#releaseApproval(reservation.id, leaseToken);
+			this.#respond(socket, frame.id, true, result);
+		} catch (retryError) {
+			if (retryError instanceof ExternalAccessRequiredError) {
+				this.#respond(socket, frame.id, false, undefined, retryError, reservation.id);
+			} else {
+				this.#releaseApproval(reservation.id, leaseToken);
+				this.#respond(socket, frame.id, false, undefined, retryError);
+			}
 		}
 	}
 
@@ -373,6 +392,12 @@ export class WorkspaceBrokerServer extends EventEmitter {
 		this.#send(socket, frame);
 	}
 
+	#removeApprovalWaiter(waiter: ApprovalWaiter): void {
+		const index = this.#approvalWaiters.indexOf(waiter);
+		if (index >= 0) this.#approvalWaiters.splice(index, 1);
+		waiter.signal.removeEventListener("abort", waiter.onAbort);
+	}
+
 	#acquireApproval(owner: string, signal: AbortSignal): Promise<ApprovalReservation> {
 		if (signal.aborted) return Promise.reject(new Error("aborted"));
 		if (!this.#activeApproval) {
@@ -387,8 +412,7 @@ export class WorkspaceBrokerServer extends EventEmitter {
 				resolve,
 				reject,
 				onAbort: () => {
-					const index = this.#approvalWaiters.indexOf(waiter);
-					if (index >= 0) this.#approvalWaiters.splice(index, 1);
+					this.#removeApprovalWaiter(waiter);
 					reject(new Error("aborted"));
 				},
 			};
@@ -421,11 +445,9 @@ export class WorkspaceBrokerServer extends EventEmitter {
 		if (this.#activeApproval?.owner === owner) {
 			this.#releaseApproval(this.#activeApproval.id, owner);
 		}
-		for (let index = this.#approvalWaiters.length - 1; index >= 0; index--) {
-			const waiter = this.#approvalWaiters[index]!;
+		for (const waiter of [...this.#approvalWaiters]) {
 			if (waiter.owner !== owner) continue;
-			this.#approvalWaiters.splice(index, 1);
-			waiter.signal.removeEventListener("abort", waiter.onAbort);
+			this.#removeApprovalWaiter(waiter);
 			waiter.reject(new Error("Approval requester disconnected"));
 		}
 	}

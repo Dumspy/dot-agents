@@ -102,11 +102,11 @@ export async function resolveMountTarget(value: string, homeDir: string): Promis
 
 export function assertMountAllowed(canonicalPath: string, workspace: string, homeDir: string): void {
 	const normalized = path.resolve(canonicalPath);
-	const prohibitedRoots = [path.parse(normalized).root, path.resolve(homeDir), ...SYSTEM_MOUNT_ROOTS.map((root) => path.resolve(root))];
-	for (const prohibited of prohibitedRoots) {
-		if (normalized === prohibited || (SYSTEM_MOUNT_ROOTS.includes(prohibited) && isInsidePath(prohibited, normalized))) {
-			throw new Error(`Sandbox policy prohibits mounting ${normalized}`);
-		}
+	if (normalized === path.parse(normalized).root || normalized === path.resolve(homeDir)) {
+		throw new Error(`Sandbox policy prohibits mounting ${normalized}`);
+	}
+	if (SYSTEM_MOUNT_ROOTS.some((root) => isInsidePath(root, normalized))) {
+		throw new Error(`Sandbox policy prohibits mounting ${normalized}`);
 	}
 	if (pathsOverlap(normalized, path.resolve(workspace))) {
 		throw new Error(`${normalized} overlaps the workspace and cannot be added as an external mount`);
