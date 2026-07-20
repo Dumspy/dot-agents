@@ -91,6 +91,47 @@ dot-agents/
 └── home/             # Only exists in the `stow` branch (auto-generated)
 ```
 
+## Experimental Pi Sandbox
+
+The new `sandbox` extension runs Pi's built-in filesystem tools, agent bash, and user `!` commands inside a disposable [Gondolin](https://github.com/earendil-works/gondolin) micro-VM. The exact directory where Pi starts is mounted read-write at `/workspace`; other host directories require approval.
+
+Sandboxed Pi processes started from the same canonical workspace share one ephemeral workspace broker and one VM. Guest packages, processes, and approved external mounts are shared while at least one Pi process remains attached. The broker and VM stop after the final process exits. Different workspaces use separate brokers, and the broker boundary is backend-neutral even though Gondolin is the only backend implemented today.
+
+The sandbox is opt-in while it is developed alongside the legacy permission system:
+
+```nix
+programs.dot-agents.pi.sandbox = {
+  enable = true;
+  cpus = 2;
+  memoryBytes = 4 * 1024 * 1024 * 1024;
+  rootfsBytes = 8 * 1024 * 1024 * 1024;
+  startupCommands = [];
+  protectedPaths = [];
+};
+```
+
+When `pi.extensions = null`, enabling the sandbox deploys `sandbox` instead of `permission-system`; disabling it preserves the legacy extension. An explicit extension list is honored as written. QEMU and `~/.pi/agent/sandbox.json` are installed only when the sandbox extension is selected.
+
+Runtime controls:
+
+- `--sandbox=gondolin` — select the Gondolin backend (default when the extension is loaded).
+- `--no-sandbox` — explicit host execution with best-effort hard denials and no prompts.
+- `/sandbox` — show backend, workspace, attached process count, errors, and shared mounts.
+- `/sandbox stop` — stop the sandbox when the caller holds the sole active process lease.
+- `/mount [--read-only|--read-write] /absolute/path` — explicitly expose an existing directory to the shared workspace sandbox.
+- `/mounts` — inspect, change, or remove shared workspace mounts.
+- `request_external_directory` — agent-facing mount request for bash workflows.
+
+Project-local `.pi/sandbox.json` is honored only for trusted projects and may select bounded guest resources, startup commands, an image, and additional protected paths. It cannot disable sandboxing or pre-authorize host mounts. The current upstream `alpine-base` image uses its native rootfs size because it lacks `resize2fs`; `rootfsBytes` is applied to explicitly selected images, which must include that utility.
+
+See:
+
+- [`plans/pi-sandbox-v1-design.md`](plans/pi-sandbox-v1-design.md)
+- [`plans/pi-sandbox-v1-implementation.md`](plans/pi-sandbox-v1-implementation.md)
+- [`plans/pi-sandbox-roadmap.md`](plans/pi-sandbox-roadmap.md)
+- [`plans/pi-sandbox-workspace-broker-design.md`](plans/pi-sandbox-workspace-broker-design.md)
+- [`plans/pi-sandbox-workspace-broker-implementation.md`](plans/pi-sandbox-workspace-broker-implementation.md)
+
 ## Pi Permissions
 
 The `permission-system` extension adds configurable permission gates and secret masking to Pi tools.

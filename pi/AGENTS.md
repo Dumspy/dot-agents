@@ -10,10 +10,13 @@ pi/
 ├── tsconfig.json             # TypeScript config
 ├── AGENTS.md                 # This file
 └── extensions/
-    └── permission-system/         # Multi-file extension
-        ├── index.ts               # Extension entry point
-        ├── lib.ts                 # Pure logic (testable)
-        └── test.ts                # Unit tests
+    ├── permission-system/         # Legacy permission extension
+    └── sandbox/                   # Shared workspace sandbox extension
+        ├── index.ts               # Pi client and local host-mode entry point
+        ├── client/                # Broker discovery and RPC client
+        ├── broker/                # Ephemeral per-workspace broker
+        ├── backends/              # Reviewed sandbox backend implementations
+        └── test/                  # Unit and opt-in VM/multi-client tests
 ```
 
 **Flat file:** single `.ts` file directly in `extensions/`. Use this for simple extensions.  
@@ -33,8 +36,9 @@ This provides `node` and `npm`. The shell hook automatically runs `npm install` 
 
 ```bash
 cd pi
-npm run check        # One-shot type check
-npm run check:watch  # Watch mode
+npm run check         # One-shot type check
+npm run check:watch   # Watch mode
+npm run build:broker  # Compile the detached workspace broker
 ```
 
 ## Testing
@@ -86,8 +90,9 @@ npm install some-lib --workspace=extensions/advanced-ext
 ## Nix Integration
 
 The Home Manager module installs extensions to `~/.pi/agent/extensions/` for end users.
-The workspace root (`package.json`, `tsconfig.json`, `node_modules`) is **only for local
-development** and is not shipped to dependants.
+The workspace root (`package.json`, TypeScript configs, `node_modules`) is **only for local
+development** and is not shipped to dependants. The sandbox workspace broker is compiled
+separately and deployed to `~/.pi/agent/libexec/sandbox-broker/` when sandbox support is selected.
 
 ## External Extensions
 
@@ -98,7 +103,7 @@ step-by-step guide for adding new ones.
 
 ## Permission System Extension
 
-The built-in `permission-system` extension provides configurable gates and secret masking for Pi tools.
+The legacy `permission-system` extension provides configurable gates and secret masking for Pi tools. It remains the default while `programs.dot-agents.pi.sandbox.enable` is false; the Home Manager module selects the sandbox extension instead when the experimental sandbox is enabled.
 
 ### Permission values
 

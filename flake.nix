@@ -59,7 +59,9 @@
     };
   in {
     packages = eachSystem (
-      {pkgs, ...}:
+      {pkgs, ...}: let
+        piNodeModules = pkgs.callPackage ./nix/pi-node-modules.nix {};
+      in
         (import ./nix/packages.nix {
           inherit pkgs lib;
           inherit externalSources;
@@ -68,7 +70,10 @@
           stow-tree = import ./nix/stow-tree.nix {
             inherit pkgs lib self externalSources;
           };
-          pi-node-modules = pkgs.callPackage ./nix/pi-node-modules.nix {};
+          pi-node-modules = piNodeModules;
+          pi-sandbox-broker = pkgs.callPackage ./nix/pi-sandbox-broker.nix {
+            inherit piNodeModules;
+          };
         }
     );
 
@@ -98,6 +103,7 @@
       in {
         inherit pre-commit-check;
         pi-node-modules = self.packages.${system}.pi-node-modules;
+        pi-sandbox-broker = self.packages.${system}.pi-sandbox-broker;
         home-manager-module = hmConfig.activationPackage;
       }
     );

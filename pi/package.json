@@ -5,10 +5,12 @@
   "scripts": {
     "check": "tsc --noEmit",
     "check:watch": "tsc --noEmit --watch",
+    "build:broker": "tsc -p tsconfig.broker.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@earendil-works/gondolin": "0.12.0",
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "^0.80.7",
