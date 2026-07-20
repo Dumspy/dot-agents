@@ -5,6 +5,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "check:watch": "tsc --noEmit --watch",
+    "build:broker": "tsc -p tsconfig.broker.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },

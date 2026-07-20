@@ -4,7 +4,7 @@
 
 Implement the complete behavior in [pi-sandbox-v1-design.md](./pi-sandbox-v1-design.md) as the replacement for the existing `permission-system` extension.
 
-This plan describes architecture and sequencing. The design document is authoritative for user-visible behavior and security policy.
+This plan describes architecture and sequencing. The design document is authoritative for user-visible behavior and security policy. The stacked workspace-sharing implementation is specified separately in [pi-sandbox-workspace-broker-implementation.md](./pi-sandbox-workspace-broker-implementation.md).
 
 ## Development coexistence
 

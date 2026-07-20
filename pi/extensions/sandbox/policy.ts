@@ -16,6 +16,7 @@ export class ExternalAccessRequiredError extends Error {
 		readonly mountRoot: string,
 		readonly requestedMode: AccessMode,
 		readonly fileRequest: boolean,
+		readonly upgrade = false,
 	) {
 		super(`External ${requestedMode} access is required for ${hostPath}`);
 		this.name = "ExternalAccessRequiredError";
@@ -85,7 +86,7 @@ export class SandboxPolicy {
 		const existing = this.mounts.findContaining(canonical.path);
 		if (existing) {
 			if (requestedMode === "read-write" && existing.mode !== "read-write") {
-				throw new Error(`${existing.hostPath} is mounted read-only; use /mounts to change its access mode`);
+				throw new ExternalAccessRequiredError(canonical.path, existing.hostPath, requestedMode, false, true);
 			}
 			return mountedHostPathToGuest(existing.hostPath, existing.guestPath, canonical.path);
 		}

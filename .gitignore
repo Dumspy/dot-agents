@@ -4,6 +4,7 @@ result-*
 
 # Node
 node_modules
+pi/dist/
 
 # Editor
 *.swp

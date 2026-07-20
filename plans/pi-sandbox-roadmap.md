@@ -6,21 +6,19 @@ Track deliberate follow-up work beyond the v1 design in [pi-sandbox-v1-design.md
 
 ## Highest priority after v1
 
-### Persistent VM per active workspace
+### Persistence beyond active workspace processes
 
-Maintain one running VM per canonical workspace while at least one Pi session remains active.
+The workspace broker design now shares one VM while at least one sandboxed Pi process remains attached to the exact canonical workspace. It preserves guest state across concurrent processes and `/new`, `/resume`, `/fork`, and `/reload`, and intentionally shares mount authorization inside that common VM.
 
-Desired properties:
+Remaining persistence work is deliberately beyond the initial broker release:
 
-- Reuse installed guest packages and runtime state across `/new`, `/resume`, `/fork`, and Pi process restarts where appropriate.
-- Reference-count active Pi sessions.
-- Clean up abandoned VMs after an idle timeout.
-- Safely reconnect after control-plane crashes.
-- Preserve mount policy per session; do not accidentally union one session's approvals into another.
-- Define behavior when two sessions request different access modes for the same external directory.
-- Expose status and explicit shutdown commands.
+- Reuse guest state after the final Pi process exits.
+- Reconnect across Pi process or host restarts.
+- Clean up abandoned idle VMs after a configurable timeout.
+- Safely adopt or checkpoint a VM after control-plane failure instead of recreating it.
+- Persist user-approved mount profiles without allowing project-controlled authorization.
 
-Likely requires a separate host daemon or durable Gondolin session manager rather than extension-module globals.
+These features require a durable manager or checkpoint design beyond the ephemeral per-workspace broker.
 
 ### Nix/devenv development environments
 
