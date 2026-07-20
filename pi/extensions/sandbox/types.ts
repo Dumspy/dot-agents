@@ -20,7 +20,6 @@ export const GUEST_WORKSPACE = "/workspace" as const;
 export const GUEST_EXTERNAL_ROOT = "/external" as const;
 
 export type AccessMode = "read-only" | "read-write";
-export type SandboxMode = SandboxBackendName | "host";
 export type SandboxState = "stopped" | "starting" | "running" | "recovering" | "failed" | "stopping";
 
 export interface ExternalMount {
@@ -63,7 +62,6 @@ export interface SandboxStartOptions<TBackend extends SandboxBackendName = Sandb
 
 export interface SandboxBackendStatus {
 	name: string;
-	mode: SandboxMode;
 	state: SandboxState;
 	id?: string;
 	error?: string;
@@ -110,14 +108,13 @@ export type SandboxToolRequest = {
 }[SandboxToolName];
 
 /**
- * Backend-neutral lifecycle and mount control plane.
+ * Backend-neutral lifecycle, mount control plane, and tool execution contract.
  *
  * The backend is selected from the reviewed compile-time registry. Host mode is
  * deliberately separate and never implements this broker contract.
  */
-export interface SandboxBackend<TBackend extends SandboxBackendName = SandboxBackendName> {
+export interface SandboxExecutionBackend<TBackend extends SandboxBackendName = SandboxBackendName> {
 	readonly name: TBackend;
-	readonly mode: SandboxMode;
 
 	start(options: SandboxStartOptions<TBackend>): Promise<void>;
 	stop(): Promise<void>;
@@ -125,10 +122,6 @@ export interface SandboxBackend<TBackend extends SandboxBackendName = SandboxBac
 	mountExternal(mount: ExternalMount): Promise<void>;
 	updateExternalMount(mount: ExternalMount): Promise<void>;
 	unmountExternal(guestPath: string): Promise<void>;
-}
-
-export interface SandboxExecutionBackend<TBackend extends SandboxBackendName = SandboxBackendName>
-	extends SandboxBackend<TBackend> {
 	isAlive(): boolean;
 	markFailed(error: Error): void;
 	recover(): Promise<void>;

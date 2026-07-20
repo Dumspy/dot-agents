@@ -30,7 +30,7 @@ import {
 	type SandboxToolResult,
 	type SandboxToolUpdate,
 } from "../types.js";
-import { errorMessage } from "../utils.js";
+import { createSerializer, errorMessage } from "../utils.js";
 import { DynamicMountProvider } from "./dynamic-mount-provider.js";
 import { createHostDirectoryProvider } from "./providers.js";
 
@@ -49,15 +49,10 @@ function bytesAsQemuSize(bytes: number): string {
 	return String(bytes);
 }
 
-function gondolinConfig(options: SandboxStartOptions<"gondolin">): GondolinConfig {
-	return options.backendConfig;
-}
-
 type VmFactory = (options: Parameters<typeof VM.create>[0]) => Promise<VM>;
 
 export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 	readonly name = "gondolin";
-	readonly mode = "gondolin" as const;
 
 	#vm: VM | undefined;
 	#state: SandboxState = "stopped";
@@ -66,14 +61,13 @@ export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 	#options: SandboxStartOptions | undefined;
 	#externalProvider = new DynamicMountProvider();
 	readonly #mounts = new Map<string, ExternalMount>();
-	#lifecycleTail: Promise<void> = Promise.resolve();
+	readonly #enqueueLifecycle = createSerializer();
 
 	constructor(private readonly createVm: VmFactory = VM.create) {}
 
 	status(): SandboxBackendStatus {
 		return {
 			name: this.name,
-			mode: this.mode,
 			state: this.#state,
 			id: this.#vm?.id,
 			error: this.#error,
@@ -108,7 +102,7 @@ export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 		this.#externalProvider = new DynamicMountProvider();
 		for (const mount of this.#mounts.values()) this.#installExternalProvider(mount);
 
-		const config = gondolinConfig(options);
+		const config: GondolinConfig = options.backendConfig;
 		const workspaceProvider = createHostDirectoryProvider({
 			hostPath: options.workspaceHostPath,
 			mode: "read-write",
@@ -263,9 +257,4 @@ export class GondolinBackend implements SandboxExecutionBackend<"gondolin"> {
 		this.#externalProvider.setMount(this.#externalProviderPath(mount.guestPath), provider);
 	}
 
-	#enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
-		const result = this.#lifecycleTail.then(operation, operation);
-		this.#lifecycleTail = result.catch(() => undefined);
-		return result;
-	}
 }

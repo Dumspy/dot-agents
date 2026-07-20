@@ -22,7 +22,6 @@ const roots: string[] = [];
 
 class FakeBackend implements SandboxExecutionBackend<"gondolin"> {
 	readonly name = "gondolin" as const;
-	readonly mode = "gondolin" as const;
 	readonly files = new Map<string, string>();
 	readonly mounts = new Map<string, ExternalMount>();
 	starts = 0;
@@ -38,7 +37,7 @@ class FakeBackend implements SandboxExecutionBackend<"gondolin"> {
 		this.state = "stopped";
 	}
 	status(): SandboxBackendStatus {
-		return { name: this.name, mode: this.mode, state: this.state, id: "fake-vm" };
+		return { name: this.name, state: this.state, id: "fake-vm" };
 	}
 	isAlive(): boolean {
 		return this.state === "running";

@@ -22,7 +22,7 @@ import { BrokerApprovalRequiredError, BrokerClient } from "./client/broker-clien
 import { loadSandboxConfig } from "./config.js";
 import { assertHostPathAllowed, hostCommandDenial } from "./host-guards.js";
 import type { BrokerEventFrame, BrokerSnapshot } from "./protocol.js";
-import { errorMessage } from "./utils.js";
+import { createSerializer, errorMessage } from "./utils.js";
 import {
 	GUEST_WORKSPACE,
 	type AccessMode,
@@ -76,7 +76,7 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 	let connectionError: string | undefined;
 	let lastContext: ExtensionContext | undefined;
 	let connectPromise: Promise<BrokerClient> | undefined;
-	let approvalTail: Promise<void> = Promise.resolve();
+	const serialApproval = createSerializer();
 
 	const localRead = createReadTool(workspace);
 	const localWrite = createWriteTool(workspace);
@@ -114,13 +114,9 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 		});
 	}
 
-	function serialApproval<T>(operation: () => Promise<T>): Promise<T> {
-		const previous = approvalTail;
-		let release!: () => void;
-		approvalTail = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		return previous.then(operation).finally(release);
+	async function refreshSnapshot(active: BrokerClient): Promise<BrokerSnapshot> {
+		snapshot = await active.status();
+		return snapshot;
 	}
 
 	function handleBrokerEvent(activeClient: BrokerClient, event: BrokerEventFrame): void {
@@ -225,9 +221,9 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 						await current.denyApproval(approval.approvalId);
 						throw new Error(`External directory access denied: ${approval.mountRoot}`);
 					}
-					const mode: AccessMode = choice === "Allow read-write" ? "read-write" : "read-only";
+						const mode: AccessMode = choice === "Allow read-write" ? "read-write" : "read-only";
 					const mount = await current.approveMount(approval.approvalId, approval.mountRoot, mode);
-					snapshot = await current.status();
+					await refreshSnapshot(current);
 					ctx.ui.notify(`${mount.hostPath} mounted ${mount.mode} at ${mount.guestPath}`, "info");
 					try {
 						return await operation(current);
@@ -413,16 +409,16 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 				ctx.ui.notify("Workspace sandbox stopped.", "info");
 				return;
 			}
-			snapshot = await active.status();
+			const current = await refreshSnapshot(active);
 			ctx.ui.notify(
 				[
-					`Mode: ${snapshotStatus(snapshot, false)}`,
+					`Mode: ${snapshotStatus(current, false)}`,
 					`Workspace: ${workspace} -> ${GUEST_WORKSPACE}`,
-					`Attached Pi processes: ${snapshot.attachedProcesses}`,
-					...(snapshot.backend.error ? [`Error: ${snapshot.backend.error}`] : []),
-					...snapshot.mounts.map((mount) => `${mount.hostPath} -> ${mount.guestPath} (${mount.mode})`),
+					`Attached Pi processes: ${current.attachedProcesses}`,
+					...(current.backend.error ? [`Error: ${current.backend.error}`] : []),
+					...current.mounts.map((mount) => `${mount.hostPath} -> ${mount.guestPath} (${mount.mode})`),
 				].join("\n"),
-				snapshot.backend.state === "failed" ? "error" : "info",
+				current.backend.state === "failed" ? "error" : "info",
 			);
 		},
 	});
@@ -435,7 +431,7 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 			const parsed = parseMountArguments(args);
 			const active = await connectBroker(ctx);
 			const mount = await active.mount(parsed.path, parsed.mode);
-			snapshot = await active.status();
+			await refreshSnapshot(active);
 			ctx.ui.notify(`${mount.hostPath} mounted ${mount.mode} at ${mount.guestPath}`, "info");
 			pi.sendMessage(
 				{

@@ -49,11 +49,6 @@ export interface ApprovalRequiredData {
 	upgrade: boolean;
 }
 
-export interface BrokerErrorData {
-	kind: "broker-error";
-	code?: string;
-}
-
 export interface BrokerExecParams {
 	command: string;
 	cwd: string;
@@ -129,7 +124,7 @@ export interface BrokerResponseFrame {
 	result?: BrokerResponsePayload;
 	error?: {
 		message: string;
-		data?: ApprovalRequiredData | BrokerErrorData;
+		data?: ApprovalRequiredData;
 	};
 }
 
