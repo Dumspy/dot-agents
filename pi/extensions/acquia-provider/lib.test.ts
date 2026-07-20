@@ -30,7 +30,10 @@ describe("buildProviderModels", () => {
 				{
 					model_name: "anthropic.claude-sonnet-4-6",
 					model_info: {
+						litellm_provider: "bedrock_converse",
+						key: "us.anthropic.claude-sonnet-4-6",
 						supports_reasoning: true,
+						supports_prompt_caching: true,
 						supports_function_calling: true,
 						supports_vision: true,
 						max_input_tokens: 1_000_000,
@@ -58,7 +61,11 @@ describe("buildProviderModels", () => {
 				},
 				contextWindow: 1_000_000,
 				maxTokens: 64_000,
-				compat: { cacheControlFormat: "anthropic", supportsStrictMode: false },
+				compat: {
+					cacheControlFormat: "anthropic",
+					sendSessionAffinityHeaders: true,
+					supportsStrictMode: false,
+				},
 			},
 		]);
 	});
@@ -120,11 +127,85 @@ describe("buildProviderModels", () => {
 		);
 		expect(models).toEqual([]);
 	});
+
+	it("uses LiteLLM cache capability and routing metadata instead of a Claude model-name heuristic", () => {
+		const models = buildProviderModels(
+			[{ id: "team-cache-alias" }],
+			[
+				{
+					model_name: "team-cache-alias",
+					model_info: {
+						key: "us.anthropic.claude-sonnet-4-6",
+						litellm_provider: "bedrock_converse",
+						supports_prompt_caching: true,
+						supports_function_calling: true,
+					},
+				},
+			],
+		);
+
+		expect(models[0]?.compat).toEqual({
+			cacheControlFormat: "anthropic",
+			sendSessionAffinityHeaders: true,
+			supportsStrictMode: false,
+		});
+	});
+
+	it("accepts a model when parallel function calling is supported", () => {
+		const models = buildProviderModels(
+			[{ id: "parallel-only" }],
+			[
+				{
+					model_name: "parallel-only",
+					model_info: {
+						supports_function_calling: false,
+						supports_parallel_function_calling: true,
+					},
+				},
+			],
+		);
+		expect(models.map((model) => model.id)).toEqual(["parallel-only"]);
+	});
+
+	it("keeps intentional aliases that share a LiteLLM routing key", () => {
+		const models = buildProviderModels(
+			[{ id: "anthropic.claude-sonnet-4-6" }, { id: "claude-sonnet-4-6-cache-control-system" }],
+			[
+				{
+					model_name: "anthropic.claude-sonnet-4-6",
+					model_info: { key: "us.anthropic.claude-sonnet-4-6", supports_function_calling: true },
+				},
+				{
+					model_name: "claude-sonnet-4-6-cache-control-system",
+					model_info: { key: "us.anthropic.claude-sonnet-4-6", supports_function_calling: true },
+				},
+			],
+		);
+		expect(models.map((model) => model.id)).toEqual([
+			"anthropic.claude-sonnet-4-6",
+			"claude-sonnet-4-6-cache-control-system",
+		]);
+	});
+
+	it("keeps /models entries that have no metadata when model info is partial", () => {
+		const models = buildProviderModels(
+			[{ id: "metadata-model" }, { id: "models-only-model" }],
+			[
+				{
+					model_name: "metadata-model",
+					model_info: { supports_function_calling: true },
+				},
+			],
+		);
+		expect(models.map((model) => model.id)).toEqual(["metadata-model", "models-only-model"]);
+	});
 });
 
 describe("fetchAcquiaProviderModels", () => {
-	it("discovers models via mock fetch", async () => {
+	it("discovers models via mock fetch without duplicating an existing /v1 path", async () => {
+		const requestedUrls: string[] = [];
 		const mockFetch = (url: string, _init: RequestInit) => {
+			requestedUrls.push(url);
 			if (url.endsWith("/models")) {
 				return Promise.resolve({
 					ok: true,
@@ -162,6 +243,7 @@ describe("fetchAcquiaProviderModels", () => {
 		const models = await fetchAcquiaProviderModels("https://example.com/v1", "key", mockFetch);
 		expect(models).toHaveLength(1);
 		expect(models[0].id).toBe("gpt-4");
+		expect(requestedUrls).toEqual(["https://example.com/v1/models", "https://example.com/v1/model/info"]);
 		expect(models[0].contextWindow).toBe(8_192);
 		expect(models[0].maxTokens).toBe(4_096);
 	});

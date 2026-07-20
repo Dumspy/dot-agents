@@ -16,6 +16,7 @@ export interface RawModelInfo {
 	mode?: string;
 	key?: string;
 	litellm_model_name?: string;
+	litellm_provider?: string;
 	max_input_tokens?: number | string;
 	max_output_tokens?: number | string;
 	max_tokens?: number | string;
@@ -24,6 +25,8 @@ export interface RawModelInfo {
 	cache_read_input_token_cost?: number | string;
 	cache_creation_input_token_cost?: number | string;
 	supports_reasoning?: boolean | string;
+	supports_prompt_caching?: boolean | string;
+	bedrock_converse_supports_strict_tools?: boolean | string;
 	supports_function_calling?: boolean | string;
 	supports_parallel_function_calling?: boolean | string;
 	supports_vision?: boolean | string;
@@ -50,8 +53,9 @@ function parseNumber(value: number | string | undefined): number | undefined {
 function parseBoolean(value: boolean | string | undefined): boolean | undefined {
 	if (typeof value === "boolean") return value;
 	if (typeof value === "string") {
-		if (value === "true" || value === "1") return true;
-		if (value === "false" || value === "0") return false;
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "true" || normalized === "1") return true;
+		if (normalized === "false" || normalized === "0") return false;
 	}
 	return undefined;
 }
@@ -130,7 +134,7 @@ export function prettyDisplayName(modelName: string): string {
 }
 
 function isTextModel(mode: string | undefined): boolean {
-	return mode === undefined || mode === null || ["chat", "completion", "responses", "response"].includes(mode);
+	return mode === undefined || mode === null || ["chat", "completion", "responses", "response"].includes(mode.trim().toLowerCase());
 }
 
 function isAggregateAlias(modelName: string): boolean {
@@ -144,20 +148,6 @@ function canonicalModelIdentity(modelName: string, modelInfo: RawModelInfo | und
 		typeof modelInfo?.key === "string" ? modelInfo.key : undefined,
 		modelName,
 	) ?? modelName;
-}
-
-function choosePreferredModelName(currentName: string | undefined, nextName: string, identity: string): string {
-	if (!currentName) return nextName;
-
-	const score = (name: string): number => {
-		let result = 0;
-		if (name === identity) result += 100;
-		if (name.includes(".")) result += 10;
-		result -= name.length / 1000;
-		return result;
-	};
-
-	return score(nextName) > score(currentName) ? nextName : currentName;
 }
 
 function shouldSkipFallbackModel(modelName: string): boolean {
@@ -193,22 +183,20 @@ function canonicalFallbackModels(modelNames: string[]): string[] {
 }
 
 function canonicalDiscoveredModels(modelNames: string[], infoByName: Map<string, RawModelInfo>): string[] {
-	const grouped = new Map<string, string>();
-	const knownNames = Array.from(infoByName.keys()).sort();
+	return modelNames.filter((modelName) => {
+		if (modelName.includes(".")) return true;
 
-	for (const modelName of modelNames) {
-		const modelInfo = infoByName.get(modelName);
-		const inferredAlias =
-			modelInfo || modelName.includes(".")
-				? undefined
-				: knownNames.find((candidate) => candidate.endsWith(`.${modelName}`));
-		const identity = inferredAlias
-			? canonicalModelIdentity(inferredAlias, infoByName.get(inferredAlias))
-			: canonicalModelIdentity(modelName, modelInfo);
-		grouped.set(identity, choosePreferredModelName(grouped.get(identity), modelName, identity));
-	}
+		const qualifiedAlias = modelNames.find(
+			(candidate) => candidate !== modelName && candidate.endsWith(`.${modelName}`),
+		);
+		if (!qualifiedAlias) return true;
 
-	return Array.from(grouped.values()).sort();
+		// Collapse only a direct qualified/unqualified alias pair. Do not collapse every
+		// model with the same LiteLLM routing key: gateways can expose intentional aliases
+		// (such as cache-control variants) with distinct behavior.
+		const identity = canonicalModelIdentity(modelName, infoByName.get(modelName) ?? infoByName.get(qualifiedAlias));
+		return identity !== canonicalModelIdentity(qualifiedAlias, infoByName.get(qualifiedAlias));
+	});
 }
 
 export function buildProviderModel(
@@ -219,10 +207,14 @@ export function buildProviderModel(
 	if (isAggregateAlias(modelName)) return undefined;
 	if (!isTextModel(modelInfo?.mode)) return undefined;
 
-	const supportsTools = pickFirst(
-		parseBoolean(modelInfo?.supports_function_calling),
-		parseBoolean(modelInfo?.supports_parallel_function_calling),
-	);
+	const supportsFunctionCalling = parseBoolean(modelInfo?.supports_function_calling);
+	const supportsParallelFunctionCalling = parseBoolean(modelInfo?.supports_parallel_function_calling);
+	const supportsTools =
+		supportsFunctionCalling === true || supportsParallelFunctionCalling === true
+			? true
+			: supportsFunctionCalling === false && supportsParallelFunctionCalling === false
+				? false
+				: undefined;
 	if (hasModelInfo ? supportsTools !== true : supportsTools === false) return undefined;
 
 	const contextWindow = pickFirst(
@@ -242,11 +234,20 @@ export function buildProviderModel(
 	const supportsReasoning = parseBoolean(modelInfo?.supports_reasoning) ?? false;
 	const supportsVision = parseBoolean(modelInfo?.supports_vision) ?? false;
 
-	// Detect Claude-backed models by inspecting the litellm/key identity or the gateway model name.
-	// These are routed to Anthropic (directly or via Bedrock) and support Anthropic-style
-	// cache_control markers — pi must set compat.cacheControlFormat to actually send them.
-	const litellmName = modelInfo?.litellm_model_name ?? modelInfo?.key ?? "";
-	const isClaudeBacked = /claude/i.test(litellmName) || /claude/i.test(modelName);
+	// LiteLLM reports cache support and upstream routing in /model/info. Use that
+	// metadata rather than the public model name, which may be an arbitrary alias.
+	const routingIdentity = [modelInfo?.litellm_provider, modelInfo?.litellm_model_name, modelInfo?.key, modelName]
+		.filter((value): value is string => typeof value === "string")
+		.join(" ")
+		.toLowerCase();
+	const isAnthropicBacked = /(?:^|[^a-z])anthropic(?:[^a-z]|$)/.test(routingIdentity);
+	const supportsPromptCaching = parseBoolean(modelInfo?.supports_prompt_caching);
+	const fallbackClaudeModel = !modelInfo && /claude/i.test(modelName);
+	const usesAnthropicCacheControl =
+		(isAnthropicBacked && supportsPromptCaching === true) || fallbackClaudeModel;
+	const routesThroughBedrockConverse = modelInfo?.litellm_provider?.trim().toLowerCase() === "bedrock_converse";
+	const supportsStrictMode =
+		parseBoolean(modelInfo?.bedrock_converse_supports_strict_tools) ?? !(isAnthropicBacked && routesThroughBedrockConverse);
 
 	return {
 		id: modelName,
@@ -261,11 +262,16 @@ export function buildProviderModel(
 		},
 		contextWindow: contextWindow ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
-		...(isClaudeBacked
+		...(usesAnthropicCacheControl || !supportsStrictMode
 			? {
 				compat: {
-					cacheControlFormat: "anthropic" as const,
-					supportsStrictMode: false,
+					...(usesAnthropicCacheControl
+						? {
+							cacheControlFormat: "anthropic" as const,
+							sendSessionAffinityHeaders: true,
+						}
+						: {}),
+					...(supportsStrictMode ? {} : { supportsStrictMode: false }),
 				},
 			}
 			: {}),
@@ -294,8 +300,8 @@ export function buildProviderModels(rawModels: RawModelListItem[], rawModelInfo:
 		: canonicalFallbackModels(modelNames);
 
 	return filteredNames
-		.filter((modelName) => (hasModelInfo ? true : !shouldSkipFallbackModel(modelName)))
-		.map((modelName) => buildProviderModel(modelName, infoByName.get(modelName), hasModelInfo))
+		.filter((modelName) => (infoByName.has(modelName) ? true : !shouldSkipFallbackModel(modelName)))
+		.map((modelName) => buildProviderModel(modelName, infoByName.get(modelName), infoByName.has(modelName)))
 		.filter((model): model is ProviderModelConfig => model !== undefined);
 }
 
@@ -320,7 +326,7 @@ export async function loadModelInfo(
 	apiKey: string,
 	fetchImpl: typeof fetch = fetch,
 ): Promise<RawModelInfoItem[]> {
-	const candidates = ["/v1/model/info", "/model/info"];
+	const candidates = baseUrl.endsWith("/v1") ? ["/model/info"] : ["/v1/model/info", "/model/info"];
 	let lastError: Error | undefined;
 
 	for (const candidate of candidates) {
