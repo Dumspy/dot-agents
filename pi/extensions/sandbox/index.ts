@@ -234,21 +234,17 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 			if (!(error instanceof BrokerApprovalRequiredError)) throw error;
 			return serialApproval(async () => {
 				const current = await connectBroker(ctx);
+				// The broker holds this reservation until this client approves or denies it.
+				// Retrying before resolving it would wait behind our own reservation.
+				await promptAndApprove(current, error.approval, ctx, reason);
 				try {
-					// Another Pi process may have approved the mount while we queued.
 					return await operation(current);
-				} catch (retryError) {
-					if (!(retryError instanceof BrokerApprovalRequiredError)) throw retryError;
-					await promptAndApprove(current, retryError.approval, ctx, reason);
-					try {
-						return await operation(current);
-					} catch (postApprovalError) {
-						// A different mount still needs approval; release its reservation.
-						if (postApprovalError instanceof BrokerApprovalRequiredError) {
-							await current.denyApproval(postApprovalError.approval.approvalId).catch(() => undefined);
-						}
-						throw postApprovalError;
+				} catch (postApprovalError) {
+					// A different mount still needs approval; release its reservation.
+					if (postApprovalError instanceof BrokerApprovalRequiredError) {
+						await current.denyApproval(postApprovalError.approval.approvalId).catch(() => undefined);
 					}
+					throw postApprovalError;
 				}
 			});
 		}
