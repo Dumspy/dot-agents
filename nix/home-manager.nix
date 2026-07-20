@@ -61,6 +61,8 @@
     then piExtensionNames
     else cfg.pi.extensions;
   missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
+  extraPiExtensionNames = lib.attrNames cfg.pi.extraExtensions;
+  hasEnabledPiExtensions = enabledPiExtensions != [] || extraPiExtensionNames != [];
 
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
@@ -102,6 +104,11 @@
         --exclude='test/' --exclude='__tests__/' \
         ${piExtensionsDir}/ $out/
       chmod -R u+w $out
+      # Overlay declarative extension sources after the auto-discovered bundle.
+      ${lib.concatMapStringsSep "\n" (name: ''
+          install -Dm644 ${cfg.pi.extraExtensions.${name}} "$out/${name}"
+        '')
+        extraPiExtensionNames}
     '';
 
   # Generate permissions.json from Nix config
@@ -197,6 +204,17 @@ in {
           Pi-specific extensions to install to ~/.pi/agent/extensions/.
           Set to `null` to auto-discover all extensions in pi/extensions/.
           Set to `[]` to disable extensions.
+        '';
+      };
+
+      extraExtensions = lib.mkOption {
+        type = lib.types.attrsOf lib.types.path;
+        default = {};
+        description = ''
+          Additional Pi extension files managed declaratively. Attribute names
+          are destination filenames under {file}`~/.pi/agent/extensions/`; values
+          are Nix store paths. These sources overlay auto-discovered extensions,
+          so a matching filename replaces the bundled extension.
         '';
       };
 
@@ -383,11 +401,11 @@ in {
           (lib.attrNames allCommands))
       ))
       # Pi extensions (link mode only; rsync mode uses activation)
-      (lib.mkIf (cfg.structure == "link" && enabledPiExtensions != []) {
+      (lib.mkIf (cfg.structure == "link" && hasEnabledPiExtensions) {
         ".pi/agent/extensions".source = piExtensionsBundle;
       })
       # Pi extension runtime dependencies (deploy if any local or external extensions enabled)
-      (lib.mkIf (enabledPiExtensions != [] || enabledExternalExts != []) {
+      (lib.mkIf (hasEnabledPiExtensions || enabledExternalExts != []) {
         ".pi/agent/package.json".source = piDir + "/package.json";
         ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
@@ -435,7 +453,7 @@ in {
         "install-dot-agents-commands" =
           mkRsyncActivation commandsBundle "${config.home.homeDirectory}/.config/opencode/commands" cfg.structure;
       })
-      (lib.mkIf (cfg.structure != "link" && enabledPiExtensions != []) {
+      (lib.mkIf (cfg.structure != "link" && hasEnabledPiExtensions) {
         "install-dot-agents-pi-extensions" =
           mkRsyncActivation piExtensionsBundle "${config.home.homeDirectory}/.pi/agent/extensions" cfg.structure;
       })
