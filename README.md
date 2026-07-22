@@ -53,6 +53,10 @@ programs.dot-agents = {
 
   pi = {
     extensions = null;  # auto-discover all
+    # Store-backed sources are overlaid into ~/.pi/agent/extensions/.
+    extraExtensions = {
+      "company-extension.ts" = ./path/to/company-extension.ts;
+    };
     permissions = {
       read = { "*" = "allow"; };
     };
