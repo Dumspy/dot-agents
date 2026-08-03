@@ -14,6 +14,6 @@
     hash = "sha256-fUVwNzZAxIpHK9HqbT+x9FEp3ZPGmi6//2dX4eEN0lk=";
     # Installed output hash (SRI, recursive). May shift when transitive deps
     # publish new patches — update with the 'got:' value from the build error.
-    npmDepsHash = "sha256-NKDCt4aTiOVu6DGJbhcp/Cahf6TFHBWa0wtRQDBY9n4=";
+    npmDepsHash = "sha256-AZtbVDlHp8mrsk3D2r1cDwgpftaTEuo5zCPdBGKU0kE=";
   };
 }
