@@ -107,6 +107,7 @@ export const DEFAULT_CONFIG: PermissionsConfig = {
 			"**/.git/**": "deny",
 			"**/.gitmodules": "deny",
 			// Pi docs live inside node_modules; allow reading them
+			"**/node_modules/pi-monorepo/**": "allow",
 			"**/node_modules/@earendil-works/pi-ai/**": "allow",
 			"**/node_modules/@earendil-works/pi-coding-agent/**": "allow",
 			"**/node_modules/@earendil-works/pi-tui/**": "allow",
@@ -318,6 +319,17 @@ const SKILL_MARKDOWN_PATTERNS = [
 
 export function isSkillMarkdownPath(resolvedPath: string): boolean {
 	return SKILL_MARKDOWN_PATTERNS.some((pattern) => matchGlob(pattern, resolvedPath));
+}
+
+export const PI_PACKAGE_PATTERNS = [
+	"**/node_modules/pi-monorepo/**",
+	"**/node_modules/@earendil-works/pi-ai/**",
+	"**/node_modules/@earendil-works/pi-coding-agent/**",
+	"**/node_modules/@earendil-works/pi-tui/**",
+];
+
+export function isPiPackagePath(resolvedPath: string): boolean {
+	return PI_PACKAGE_PATTERNS.some((pattern) => matchGlob(pattern, resolvedPath));
 }
 
 // ------------------------------------------------------------------

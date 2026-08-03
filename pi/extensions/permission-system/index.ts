@@ -51,6 +51,7 @@ import {
 	getExternalDirectoryRoot,
 	getToolValue,
 	hardStop,
+	isPiPackagePath,
 	isSkillMarkdownPath,
 	resolvePermission,
 	resolveToolPath,
@@ -176,6 +177,11 @@ export default function permissionSystem(pi: ExtensionAPI) {
 			// Reading markdown files from known skill directories is always allowed
 			if (toolName === "read" && isSkillMarkdownPath(resolvedPath)) {
 				return logAndAllow(toolName, value, ctx.cwd, "allowed", "skill markdown read");
+			}
+
+			// Pi package docs (often in nix store or other node_modules) bypass external_directory
+			if (toolName === "read" && isPiPackagePath(resolvedPath)) {
+				return logAndAllow(toolName, value, ctx.cwd, "allowed", "pi package docs");
 			}
 
 			const extDirRoot = getExternalDirectoryRoot(resolvedPath, ctx.cwd);
