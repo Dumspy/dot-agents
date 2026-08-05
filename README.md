@@ -99,8 +99,12 @@ dot-agents/
 
 The `permission-system` extension adds configurable permission gates and secret masking to Pi tools.
 When a tool matches an `"ask"` rule, a simple prompt appears with three options:
-**Yes**, **No**, and **Explain**. When a tool matches a `"cloak"` rule, the call is allowed
-but sensitive values in the result are masked (read tool only in v1).
+**Yes**, **No**, and **Explain**. The prompt is also published through the typed
+`companion:dialog:*` event-bus contract so a cooperating Pi Companion extension can mirror it;
+the terminal remains available and the first valid terminal or remote response wins. The
+permission system remains the sole policy, caching, decision, and logging authority. When a tool
+matches a `"cloak"` rule, the call is allowed but sensitive values in the result are masked (read
+tool only in v1).
 
 ### Nix configuration
 

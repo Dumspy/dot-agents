@@ -39,6 +39,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { CompanionDialogBroker } from "./dialog-broker.js";
 import {
 	DEFAULT_CONFIG,
 	applyMask,
@@ -96,6 +97,7 @@ function loadConfig(cwd: string): PermissionsConfig {
 const SYSTEM_PROMPT_NOTICE = `Permission system is active. Some paths and tools are denied by policy. If a tool call is blocked, stop and report the restriction to the user — never use bash or another tool as a workaround.`;
 
 export default function permissionSystem(pi: ExtensionAPI) {
+	const dialogs = new CompanionDialogBroker(pi.events);
 	let config = DEFAULT_CONFIG;
 	const sessionApprovals = new Set<string>();
 	const inputDebouncer = createInputDebouncer();
@@ -210,11 +212,11 @@ export default function permissionSystem(pi: ExtensionAPI) {
 						const description = formatToolDescription(toolName, input);
 						const title = `External directory access\n\nThe agent wants to ${description}\n\nThis path is outside the current workspace:\n  ${ctx.cwd}\n\nTarget: ${resolvedPath}\n\nAllow leaving the workspace?`;
 						await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-						const choice = await ctx.ui.select(title, ["Yes", "No"]);
+						const choice = await dialogs.select(ctx.ui, title, ["Yes", "No"]);
 
 						if (choice === "No" || choice === undefined) {
 							await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-							const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
+							const alternative = await dialogs.input(ctx.ui, "What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
 							if (alternative) {
 								try {
 									pi.sendUserMessage(`I denied ${description}. Instead: ${alternative}`, { deliverAs: "steer" });
@@ -282,7 +284,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		const description = formatToolDescription(toolName, input);
 		const title = `Permission required\n\nThe agent wants to ${description}\n\nAllow this action?`;
 		await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-		const choice = await ctx.ui.select(title, ["Yes", "No", "Explain"]);
+		const choice = await dialogs.select(ctx.ui, title, ["Yes", "No", "Explain"]);
 
 		if (choice === "Yes") {
 			sessionApprovals.add(approvalKey);
@@ -305,7 +307,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 
 		// "No" or cancelled
 		await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-		const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
+		const alternative = await dialogs.input(ctx.ui, "What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
 		if (alternative) {
 			try {
 				pi.sendUserMessage(`I denied ${description}. Instead: ${alternative}`, { deliverAs: "steer" });
