@@ -8,12 +8,12 @@
   "pi-mcp-adapter" = {
     type = "npm";
     package = "pi-mcp-adapter";
-    version = "2.11.0";
+    version = "2.32.1";
     description = "Use MCP servers with Pi — one proxy tool instead of hundreds";
     # Tarball hash (SRI)
-    hash = "sha256-fUVwNzZAxIpHK9HqbT+x9FEp3ZPGmi6//2dX4eEN0lk=";
+    hash = "sha256-X3t5/hGGmZZ7HFJNi7ku5ZOdEIrNk0Is7q5+sqOWMIc=";
     # Installed output hash (SRI, recursive). May shift when transitive deps
     # publish new patches — update with the 'got:' value from the build error.
-    npmDepsHash = "sha256-AZtbVDlHp8mrsk3D2r1cDwgpftaTEuo5zCPdBGKU0kE=";
+    npmDepsHash = "sha256-YjoGtb8AzDPZCnGcDg7g5V9fApJCjmhtuImrsnoS4lg=";
   };
 }
