@@ -1,11 +1,18 @@
 # Build an npm package for Pi's external extension loader.
 #
-# Fetches the tarball, runs `npm install --omit=dev`, and produces a
-# fixed-output derivation. The entire installed tree (package + node_modules)
-# is hashed via npmDepsHash, so no lockfile is needed.
+# Fetches the tarball, runs `npm ci --omit=dev` against a vendored lockfile,
+# and produces a fixed-output derivation. The entire installed tree
+# (package + node_modules) is hashed via npmDepsHash.
 #
-# Trade-off: npm resolves semver ranges live, so transitive dep patches can
-# shift the hash. CI catches this; fix is a one-line hash update.
+# The lockfile (nix/external-locks/<package>-<version>.package-lock.json) pins
+# transitive deps, so the hash is stable until the version or lockfile changes.
+# Regenerate the lockfile when bumping `version`:
+#
+#   TMP=$(mktemp -d) && \
+#     curl -sL https://registry.npmjs.org/<pkg>/-/<pkg>-<ver>.tgz -o $TMP/pkg.tgz && \
+#     mkdir -p $TMP/pkg && tar xzf $TMP/pkg.tgz --strip-components=1 -C $TMP/pkg && \
+#     (cd $TMP/pkg && npm install --package-lock-only --ignore-scripts) && \
+#     cp $TMP/pkg/package-lock.json nix/external-locks/<pkg>-<ver>.package-lock.json
 #
 # Usage (in packages.nix):
 #   buildPiNpmPackage {
@@ -14,6 +21,7 @@
 #     version = "2.11.0";
 #     hash = "sha256-...";
 #     npmDepsHash = "sha256-...";
+#     packageLock = ./external-locks/pi-mcp-adapter-2.11.0.package-lock.json;
 #   }
 #
 # To get hashes for a new package, see README.md → "Adding a new external extension".
@@ -26,6 +34,7 @@
   version,
   hash,
   npmDepsHash,
+  packageLock,
   metaDescription ? packageName,
 }: let
   tarball = fetchurl {
@@ -50,7 +59,11 @@ in
       mkdir pkg
       tar xzf ${tarball} --strip-components=1 -C pkg
       cd pkg
-      npm install --omit=dev --ignore-scripts --cache $TMPDIR/.npm
+      # Vendored lockfile pins transitive deps (see header comment).
+      # `npm ci` fails loudly if package.json and the lock are out of sync,
+      # which is what we want — no silent semver drift.
+      cp ${packageLock} ./package-lock.json
+      npm ci --omit=dev --ignore-scripts --cache $TMPDIR/.npm
 
       runHook postBuild
     '';

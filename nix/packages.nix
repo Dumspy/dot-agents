@@ -25,12 +25,15 @@
     '';
 
   # Build a single external Pi npm package.
+  # The lockfile lives at nix/external-locks/<package>-<version>.package-lock.json
+  # and pins transitive deps so `npm ci` is deterministic.
   mkPiNpmPackage = name: spec:
     pkgs.callPackage ./build-pi-npm-package.nix {
       packageName = spec.package;
       version = spec.version;
       hash = spec.hash;
       npmDepsHash = spec.npmDepsHash;
+      packageLock = ./external-locks + "/${spec.package}-${spec.version}.package-lock.json";
       metaDescription = spec.description or spec.package;
     };
 

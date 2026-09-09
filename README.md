@@ -301,32 +301,48 @@ nix-prefetch-url https://registry.npmjs.org/my-extension/-/my-extension-1.0.0.tg
 # Copy the sha256 output into the `hash` field
 ```
 
-**Step 3 — Get the npm dependencies hash**
+**Step 3 — Vendor the lockfile (pins transitive deps)**
+
+Nix builds run `npm ci` against a lockfile checked into
+`nix/external-locks/<package>-<version>.package-lock.json`.
+Generate it from the published tarball:
+
+```bash
+TMP=$(mktemp -d) && \
+  curl -sL https://registry.npmjs.org/my-extension/-/my-extension-1.0.0.tgz -o $TMP/pkg.tgz && \
+  mkdir -p $TMP/pkg && tar xzf $TMP/pkg.tgz --strip-components=1 -C $TMP/pkg && \
+  (cd $TMP/pkg && npm install --package-lock-only --ignore-scripts) && \
+  cp $TMP/pkg/package-lock.json nix/external-locks/my-extension-1.0.0.package-lock.json
+```
+
+Commit the lockfile — Nix requires it to be tracked by Git (`git add`).
+
+**Step 4 — Get the npm dependencies hash**
 
 Temporarily set `npmDepsHash = ""` in the registry entry, then:
 
 ```bash
-nix build .#my-extension --rebuild 2>&1 | grep 'got:'
+nix build .#my-extension 2>&1 | grep 'got:'
 # Copy the sha256 from the error message into `npmDepsHash`
 ```
 
-This is a fixed-output derivation — it only needs to build once, then Nix
-caches the result.
+The hash is stable until `version` or the lockfile changes, because `npm ci`
+never resolves semver ranges live. When bumping a version, repeat steps 3–4.
 
-**Step 4 — Add to stow setup (non-Nix users)**
+**Step 5 — Add to stow setup (non-Nix users)**
 
-Add the package name to the `EXTERNAL_PI_PACKAGES` array in `stow/setup.sh`:
+Add the version-pinned package to the `EXTERNAL_PI_PACKAGES` array in `stow/setup.sh`:
 
 ```bash
 EXTERNAL_PI_PACKAGES=(
-  "pi-mcp-adapter"
-  "my-extension"    # ← add here
+  "pi-mcp-adapter@2.32.1"
+  "my-extension@1.0.0"    # ← add here, keep version in sync with the registry
 )
 ```
 
 Also add it to the array inside the post-merge hook in the same file.
 
-**Step 5 — Verify**
+**Step 6 — Verify**
 
 Nix: after Home Manager rebuild, the extension is in `~/.pi/agent/npm/node_modules/<name>/`
 and listed in `~/.pi/agent/settings.json`. Start Pi and confirm the extension
@@ -338,7 +354,8 @@ automatically. Otherwise Pi will use it on next startup after `pi install npm:<n
 **Summary of files to change when adding an extension:**
 
 1. `nix/pi-external-extensions.nix` — registry entry with hashes
-2. `stow/setup.sh` — add to `EXTERNAL_PI_PACKAGES` array (×2: main + post-merge hook)
+2. `nix/external-locks/<package>-<version>.package-lock.json` — vendored lockfile (pins transitive deps)
+3. `stow/setup.sh` — add version-pinned `name@version` to `EXTERNAL_PI_PACKAGES` array (×2: main + post-merge hook)
 
 That's it. The rest is automatic — Nix builds and deploys the derivation,
 Home Manager merges settings.json, and stow runs `pi install`.

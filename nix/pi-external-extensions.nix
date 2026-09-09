@@ -12,8 +12,10 @@
     description = "Use MCP servers with Pi — one proxy tool instead of hundreds";
     # Tarball hash (SRI)
     hash = "sha256-X3t5/hGGmZZ7HFJNi7ku5ZOdEIrNk0Is7q5+sqOWMIc=";
-    # Installed output hash (SRI, recursive). May shift when transitive deps
-    # publish new patches — update with the 'got:' value from the build error.
-    npmDepsHash = "sha256-YjoGtb8AzDPZCnGcDg7g5V9fApJCjmhtuImrsnoS4lg=";
+    # Installed output hash (SRI, recursive) for `npm ci` against
+    # nix/external-locks/<package>-<version>.package-lock.json.
+    # Stable until version or lockfile changes. Get it via:
+    #   nix build .#pi-mcp-adapter --rebuild 2>&1 | grep 'got:'
+    npmDepsHash = "sha256-7a4gnqgtwaIgvpvtXgW2x/mzLn00V7GiOFvbOKQMMv4=";
   };
 }

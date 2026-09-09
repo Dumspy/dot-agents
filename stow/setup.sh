@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Must stay in sync with nix/pi-external-extensions.nix.
+# Must stay in sync with nix/pi-external-extensions.nix (name@version).
 EXTERNAL_PI_PACKAGES=(
-  "pi-mcp-adapter"
+  "pi-mcp-adapter@2.32.1"
 )
 
 # Install a post-merge hook that re-runs this script after the stow branch
@@ -35,7 +35,8 @@ if command -v pi &> /dev/null; then
   done
 else
   echo "[dot-agents] Pi CLI not found — skipping external extensions."
-  echo "[dot-agents] Run 'pi install ${EXTERNAL_PI_PACKAGES[*]}' after installing Pi."
+  echo -n "[dot-agents] Run after installing Pi:";
+  printf ' pi install "npm:%s"' "${EXTERNAL_PI_PACKAGES[@]}"; echo
 fi
 
 echo "[dot-agents] Setup complete."
