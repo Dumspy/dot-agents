@@ -3,8 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Must stay in sync with nix/pi-external-extensions.nix (name@version).
+# Currently empty — no external extensions enabled. Preserved example below.
 EXTERNAL_PI_PACKAGES=(
-  "pi-mcp-adapter@2.32.1"
+  # "pi-mcp-adapter@2.32.1"
 )
 
 # Install a post-merge hook that re-runs this script after the stow branch
