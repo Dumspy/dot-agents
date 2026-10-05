@@ -62,12 +62,14 @@
     else cfg.pi.extensions;
   missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
   extraPiExtensionNames = lib.attrNames cfg.pi.extraExtensions;
-  hasEnabledPiExtensions = enabledPiExtensions != [] || extraPiExtensionNames != [];
+  overlayExtensionSources = cfg.pi.extraExtensions // fileExtOverlaySources;
+  overlayExtensionNames = builtins.attrNames overlayExtensionSources;
+  hasEnabledPiExtensions = enabledPiExtensions != [] || overlayExtensionNames != [];
 
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
 
-  # --- External Pi extensions (npm) ---
+  # --- External Pi extensions (npm + file) ---
   allExternalExtNames = builtins.attrNames piExternalExtRegistry;
   enabledExternalExts =
     if cfg.pi.externalExtensions == null
@@ -75,19 +77,33 @@
     else cfg.pi.externalExtensions;
   missingExternalExts = lib.filter (name: !lib.elem name allExternalExtNames) enabledExternalExts;
 
+  isFileExt = name: (piExternalExtRegistry.${name}.type or "npm") == "file";
+  enabledFileExts = lib.filter isFileExt enabledExternalExts;
+  enabledNpmExts = lib.filter (name: !(isFileExt name)) enabledExternalExts;
+  npmRegistryNames = lib.filter (name: !(isFileExt name)) allExternalExtNames;
+
   externalExtPkgs = lib.genAttrs enabledExternalExts (
     name: self.packages.${pkgs.stdenv.hostPlatform.system}.${name}
   );
 
-  # The packages array we contribute to Pi's settings.json (with npm: prefix)
-  externalExtSettingsPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") enabledExternalExts;
+  # File-type extensions deploy as plain files into the extensions bundle,
+  # alongside extraExtensions. Filenames must not collide with those.
+  fileExtOverlaySources = lib.listToAttrs (map (name: {
+      name = piExternalExtRegistry.${name}.filename;
+      value = externalExtPkgs.${name};
+    })
+    enabledFileExts);
+  overlappingOverlayNames = lib.intersectLists (builtins.attrNames fileExtOverlaySources) extraPiExtensionNames;
+
+  # The packages array we contribute to Pi's settings.json (npm only, with npm: prefix)
+  externalExtSettingsPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") enabledNpmExts;
 
   externalExtSettingsJson = builtins.toJSON {
     packages = externalExtSettingsPackages;
   };
 
-  # All registry package names (for cleanup of previously-enabled packages)
-  allRegistryPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") allExternalExtNames;
+  # All registry npm package names (for cleanup of previously-enabled packages)
+  allRegistryPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") npmRegistryNames;
   allRegistryPackagesJson = builtins.toJSON allRegistryPackages;
 
   piExtensionsBundle =
@@ -104,11 +120,12 @@
         --exclude='test/' --exclude='__tests__/' \
         ${piExtensionsDir}/ $out/
       chmod -R u+w $out
-      # Overlay declarative extension sources after the auto-discovered bundle.
+      # Overlay declarative extension sources (extraExtensions + file-type
+      # external extensions) after the auto-discovered bundle.
       ${lib.concatMapStringsSep "\n" (name: ''
-          install -Dm644 ${cfg.pi.extraExtensions.${name}} "$out/${name}"
+          install -Dm644 ${overlayExtensionSources.${name}} "$out/${name}"
         '')
-        extraPiExtensionNames}
+        overlayExtensionNames}
     '';
 
   # Generate permissions.json from Nix config
@@ -280,8 +297,10 @@ in {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
         default = [];
         description = ''
-          External Pi extensions to install from npm, deployed to
+          External Pi extensions from the registry (see nix/pi-external-extensions.nix).
+          `npm`-type entries install from npm, deployed to
           ~/.pi/agent/npm/node_modules/<name>/ and registered in settings.json.
+          `file`-type entries deploy a single file to ~/.pi/agent/extensions/.
           Set to `null` to auto-discover all from the registry.
           Set to `[]` to disable external extensions (default).
         '';
@@ -352,6 +371,14 @@ in {
         assertion = missingExternalExts == [];
         message = "dot-agents: unknown external pi extension(s) requested: ${lib.concatStringsSep ", " missingExternalExts}. Available: ${lib.concatStringsSep ", " allExternalExtNames}";
       }
+      {
+        assertion = lib.all (name: let t = piExternalExtRegistry.${name}.type or "npm"; in t == "npm" || t == "file") allExternalExtNames;
+        message = "dot-agents: external pi extension registry entries must have type \"npm\" or \"file\"";
+      }
+      {
+        assertion = overlappingOverlayNames == [];
+        message = "dot-agents: file-type external extension(s) collide with extraExtensions filenames: ${lib.concatStringsSep ", " overlappingOverlayNames}";
+      }
     ];
 
     # --- home.file ---
@@ -405,7 +432,7 @@ in {
         ".pi/agent/extensions".source = piExtensionsBundle;
       })
       # Pi extension runtime dependencies (deploy if any local or external extensions enabled)
-      (lib.mkIf (hasEnabledPiExtensions || enabledExternalExts != []) {
+      (lib.mkIf (hasEnabledPiExtensions || enabledNpmExts != []) {
         ".pi/agent/package.json".source = piDir + "/package.json";
         ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
@@ -425,12 +452,12 @@ in {
           })
           enabledPiThemes)
       ))
-      (lib.mkIf (enabledExternalExts != []) (
+      (lib.mkIf (enabledNpmExts != []) (
         lib.listToAttrs (map (name: {
             name = ".pi/agent/npm/node_modules/${piExternalExtRegistry.${name}.package}";
             value.source = "${externalExtPkgs.${name}}";
           })
-          enabledExternalExts)
+          enabledNpmExts)
       ))
     ];
 
@@ -459,7 +486,7 @@ in {
       })
       # Sync registry-managed packages into Pi's settings.json.
       # Adds enabled packages, removes disabled ones, preserves user-installed packages.
-      (lib.mkIf (enabledExternalExts != [] || cfg.pi.externalExtensions != null) {
+      (lib.mkIf (enabledNpmExts != [] || cfg.pi.externalExtensions != null) {
         "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
           export PATH="${pkgs.jq}/bin:$PATH"
           SETTINGS="${config.home.homeDirectory}/.pi/agent/settings.json"
