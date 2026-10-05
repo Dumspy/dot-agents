@@ -41,7 +41,7 @@ in
     outputHash =
       {
         x86_64-linux = "sha256-jDhJS8zHgqHCetl7R2wz0r7I7wioDSwD51x32x29Q3M=";
-        aarch64-darwin = "sha256-ewRP/st5vixYf2ShHbK/gXoJakZvh7UhzRt9+CV7+Cw=";
+        aarch64-darwin = "sha256-nroFGUOjw0vE2+PLhgKtWXcEcto4ruHKvEeWEtpZhJ8=";
         aarch64-linux = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
         x86_64-darwin = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
       }.${
