@@ -12,6 +12,7 @@ import {
 	getToolValue,
 	hardStop,
 	isExternalPath,
+	isHerdrBlockedReportingEnabled,
 	isPathBasedTool,
 	isSkillMarkdownPath,
 	matchGlob,
@@ -311,6 +312,43 @@ describe("deepMerge", () => {
 		});
 		expect(merged.masks.bash).toBeDefined();
 		expect(merged.masks.bash["*"]).toEqual({ pattern: "token" });
+	});
+
+	it("merges herdr config", () => {
+		const merged = deepMerge(DEFAULT_CONFIG, { herdr: { enabled: false } });
+		expect(merged.herdr).toEqual({ enabled: false });
+		expect(merged.rules.read).toBeDefined(); // base preserved
+	});
+
+	it("preserves base herdr config when override is empty", () => {
+		const base: PermissionsConfig = { ...DEFAULT_CONFIG, herdr: { enabled: false } };
+		const merged = deepMerge(base, {});
+		expect(merged.herdr).toEqual({ enabled: false });
+	});
+});
+
+describe("isHerdrBlockedReportingEnabled", () => {
+	it("is enabled by default", () => {
+		expect(isHerdrBlockedReportingEnabled(DEFAULT_CONFIG)).toBe(true);
+	});
+
+	it("is enabled when herdr config is absent", () => {
+		expect(isHerdrBlockedReportingEnabled({ rules: {}, masks: {} })).toBe(true);
+	});
+
+	it("can be disabled explicitly", () => {
+		const config: PermissionsConfig = { rules: {}, masks: {}, herdr: { enabled: false } };
+		expect(isHerdrBlockedReportingEnabled(config)).toBe(false);
+	});
+
+	it("stays enabled when herdr config is empty", () => {
+		const config: PermissionsConfig = { rules: {}, masks: {}, herdr: {} };
+		expect(isHerdrBlockedReportingEnabled(config)).toBe(true);
+	});
+
+	it("round-trips through deepMerge", () => {
+		const merged = deepMerge(DEFAULT_CONFIG, { herdr: { enabled: false } });
+		expect(isHerdrBlockedReportingEnabled(merged)).toBe(false);
 	});
 });
 

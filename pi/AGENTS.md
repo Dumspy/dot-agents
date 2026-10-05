@@ -136,6 +136,20 @@ Create `~/.pi/agent/permissions.json` (or use Nix — see README):
 
 Rules and masks are merged with project-local `.pi/permissions.json` (project takes precedence).
 
+### Herdr integration
+
+While a permission prompt is on screen, the extension emits `herdr:blocked`
+on the extension event bus so Herdr's Pi integration marks the pane as blocked
+(waiting for human). Enabled by default; opt out with:
+
+```json
+{
+  "herdr": { "enabled": false }
+}
+```
+
+`/permissions` shows whether blocked reporting is enabled.
+
 ### Mask patterns
 
 Each mask is a regex applied to the text content of `read` results:

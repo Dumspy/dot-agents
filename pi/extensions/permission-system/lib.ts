@@ -31,6 +31,26 @@ export interface PermissionsConfig {
 	masks: {
 		[toolName: string]: ToolMasks;
 	};
+	/**
+	 * Herdr integration. When enabled (default), permission prompts emit
+	 * `herdr:blocked` on the extension event bus so Herdr's Pi integration
+	 * marks the pane as blocked (waiting for human) instead of relying on
+	 * screen-shape detection. Set `{ "enabled": false }` to opt out.
+	 */
+	herdr?: HerdrConfig;
+}
+
+export interface HerdrConfig {
+	enabled?: boolean;
+}
+
+/**
+ * Whether permission prompts should report blocked state to Herdr.
+ * Enabled by default; only `enabled: false` opts out. Emitting is harmless
+ * when Herdr's Pi integration isn't installed (no listener).
+ */
+export function isHerdrBlockedReportingEnabled(config: PermissionsConfig): boolean {
+	return config.herdr?.enabled !== false;
 }
 
 export const EXTERNAL_DIRECTORY_TOOLS = ["read", "write", "edit"] as const;
@@ -166,6 +186,7 @@ export function deepMerge(base: PermissionsConfig, override: Partial<Permissions
 	const result: PermissionsConfig = {
 		rules: { ...base.rules },
 		masks: { ...base.masks },
+		...(base.herdr !== undefined ? { herdr: { ...base.herdr } } : {}),
 	};
 
 	for (const [toolName, toolRules] of Object.entries(override.rules ?? {})) {
@@ -179,6 +200,10 @@ export function deepMerge(base: PermissionsConfig, override: Partial<Permissions
 			...(typeof base.masks[toolName] === "object" && base.masks[toolName] != null ? (base.masks[toolName] as ToolMasks) : {}),
 			...toolMasks,
 		};
+	}
+
+	if (override.herdr !== undefined) {
+		result.herdr = { ...base.herdr, ...override.herdr };
 	}
 
 	return result;

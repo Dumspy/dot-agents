@@ -32,8 +32,18 @@
  *     "read": {
  *       ".env": { "pattern": "(=).+", "replace": "$1" }
  *     }
+ *   },
+ *   "herdr": {
+ *     "enabled": true
  *   }
  * }
+ *
+ * Herdr integration: while a permission prompt is on screen, the extension
+ * emits `herdr:blocked` on the extension event bus so Herdr's Pi integration
+ * marks the pane as blocked (waiting for human) instead of relying on
+ * screen-shape detection. Enabled by default; set `herdr.enabled` to false
+ * to opt out. Outside Herdr (or without its integration installed) the emit
+ * is a harmless no-op.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -51,6 +61,7 @@ import {
 	getExternalDirectoryRoot,
 	getToolValue,
 	hardStop,
+	isHerdrBlockedReportingEnabled,
 	isPiPackagePath,
 	isSkillMarkdownPath,
 	resolvePermission,
@@ -142,6 +153,34 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		return { block: true, reason: `${userReason} ${hardStop()}` };
 	}
 
+	/**
+	 * Report blocked state to Herdr's Pi integration while a permission prompt
+	 * is waiting for the human. The integration listens for `herdr:blocked` on
+	 * the extension event bus and takes over state authority from screen
+	 * detection. Safe to call outside Herdr (no listener \u2192 no-op) and when
+	 * disabled via `herdr.enabled: false`.
+	 */
+	function emitHerdrBlocked(active: boolean, label?: string): void {
+		if (!isHerdrBlockedReportingEnabled(config)) return;
+		try {
+			pi.events.emit("herdr:blocked", active ? { active: true, label } : { active: false });
+		} catch {}
+	}
+
+	/**
+	 * Hold Herdr blocked state across a whole prompt flow (select + optional
+	 * follow-up input) so the pane doesn't flicker between blocked/working.
+	 * Always clears, even on abort, deny-return, or exception.
+	 */
+	async function withHerdrBlocked<T>(label: string, fn: () => Promise<T>): Promise<T> {
+		emitHerdrBlocked(true, label);
+		try {
+			return await fn();
+		} finally {
+			emitHerdrBlocked(false);
+		}
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		reloadConfig(ctx.cwd);
 		sessionApprovals.clear();
@@ -209,22 +248,30 @@ export default function permissionSystem(pi: ExtensionAPI) {
 					if (!sessionApprovals.has(extApprovalKey)) {
 						const description = formatToolDescription(toolName, input);
 						const title = `External directory access\n\nThe agent wants to ${description}\n\nThis path is outside the current workspace:\n  ${ctx.cwd}\n\nTarget: ${resolvedPath}\n\nAllow leaving the workspace?`;
-						await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-						const choice = await ctx.ui.select(title, ["Yes", "No"]);
-
-						if (choice === "No" || choice === undefined) {
+						const outcome = await withHerdrBlocked(`Permission: ${description}`, async () => {
 							await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-							const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
-							if (alternative) {
+							const choice = await ctx.ui.select(title, ["Yes", "No"]);
+
+							if (choice === "No" || choice === undefined) {
+								await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
+								const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
+								return { choice, alternative };
+							}
+
+							return { choice, alternative: undefined as string | undefined };
+						});
+
+						if (outcome.choice === "No" || outcome.choice === undefined) {
+							if (outcome.alternative) {
 								try {
-									pi.sendUserMessage(`I denied ${description}. Instead: ${alternative}`, { deliverAs: "steer" });
+									pi.sendUserMessage(`I denied ${description}. Instead: ${outcome.alternative}`, { deliverAs: "steer" });
 								} catch (e) {
 									console.error(`[permissions] Failed to send alternative action: ${e}`);
 								}
 								return logAndBlock(
 									toolName, resolvedPath, ctx.cwd, "prompt-denied-with-alternative",
-									`external_directory: user denied with alternative: ${alternative}`,
-									`Blocked by user (alternative suggested): ${alternative}.`,
+									`external_directory: user denied with alternative: ${outcome.alternative}`,
+									`Blocked by user (alternative suggested): ${outcome.alternative}.`,
 								);
 							}
 							return logAndBlock(
@@ -281,8 +328,20 @@ export default function permissionSystem(pi: ExtensionAPI) {
 
 		const description = formatToolDescription(toolName, input);
 		const title = `Permission required\n\nThe agent wants to ${description}\n\nAllow this action?`;
-		await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-		const choice = await ctx.ui.select(title, ["Yes", "No", "Explain"]);
+		const outcome = await withHerdrBlocked(`Permission: ${description}`, async () => {
+			await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
+			const choice = await ctx.ui.select(title, ["Yes", "No", "Explain"]);
+
+			if (choice !== "No" && choice !== undefined) {
+				return { choice, alternative: undefined as string | undefined };
+			}
+
+			// "No" or cancelled — ask for an alternative before giving up.
+			await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
+			const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
+			return { choice, alternative };
+		});
+		const choice = outcome.choice;
 
 		if (choice === "Yes") {
 			sessionApprovals.add(approvalKey);
@@ -304,8 +363,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 		}
 
 		// "No" or cancelled
-		await inputDebouncer.waitForIdle(PERMISSION_PROMPT_DEBOUNCE_MS, ctx.signal);
-		const alternative = await ctx.ui.input("What should I do instead? (Leave empty to just block)", "e.g. use a different path, explain why it's needed...");
+		const alternative = outcome.alternative;
 		if (alternative) {
 			try {
 				pi.sendUserMessage(`I denied ${description}. Instead: ${alternative}`, { deliverAs: "steer" });
@@ -389,6 +447,7 @@ export default function permissionSystem(pi: ExtensionAPI) {
 				}
 			}
 
+			lines.push("", `Herdr blocked reporting: ${isHerdrBlockedReportingEnabled(config) ? "enabled" : "disabled"}`);
 			lines.push("", `Log file: ${join(getAgentDir(), "permissions.log.jsonl")}`);
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
