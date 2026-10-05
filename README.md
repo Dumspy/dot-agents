@@ -227,7 +227,7 @@ Pi discovers external extensions through `settings.json` → `packages`:
 
 ```json
 {
-  "packages": ["pi-mcp-adapter"]
+  "packages": ["my-extension"]
 }
 ```
 
@@ -259,8 +259,9 @@ programs.dot-agents = {
     # Auto-discover all external extensions from registry
     externalExtensions = null;
 
-    # Or pick specific ones:
-    externalExtensions = ["pi-mcp-adapter"];
+    # Or pick specific ones (registry is currently empty — see
+    # nix/pi-external-extensions.nix for the preserved example):
+    externalExtensions = ["my-extension"];
 
     # Or disable all:
     externalExtensions = [];
@@ -268,7 +269,7 @@ programs.dot-agents = {
 };
 ```
 
-Available extensions: `pi-mcp-adapter`
+Available extensions: none (registry currently empty — see `nix/pi-external-extensions.nix` for the preserved `pi-mcp-adapter` example)
 
 ### Non-Nix (stow)
 
@@ -335,7 +336,6 @@ Add the version-pinned package to the `EXTERNAL_PI_PACKAGES` array in `stow/setu
 
 ```bash
 EXTERNAL_PI_PACKAGES=(
-  "pi-mcp-adapter@2.32.1"
   "my-extension@1.0.0"    # ← add here, keep version in sync with the registry
 )
 ```
@@ -346,7 +346,7 @@ Also add it to the array inside the post-merge hook in the same file.
 
 Nix: after Home Manager rebuild, the extension is in `~/.pi/agent/npm/node_modules/<name>/`
 and listed in `~/.pi/agent/settings.json`. Start Pi and confirm the extension
-loads via `/mcp` (for pi-mcp-adapter) or the extension's own commands.
+loads via the extension's own commands (e.g. `/mcp` for an MCP adapter).
 
 Stow: run `./setup.sh` — if `pi` is installed, the extension is installed
 automatically. Otherwise Pi will use it on next startup after `pi install npm:<name>`.

@@ -40,7 +40,8 @@ The tree mirrors the target paths under `$HOME`:
 .pi/agent/               -> ~/.pi/agent/
 ```
 
-External Pi extensions (like `pi-mcp-adapter`) are installed automatically by
+External Pi extensions (see `nix/pi-external-extensions.nix` for the registry —
+currently empty) are installed automatically by
 `setup.sh` if the `pi` CLI is available. See `nix/pi-external-extensions.nix`
 for the registry of available extensions.
 
