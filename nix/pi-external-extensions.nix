@@ -2,12 +2,30 @@
 # See README.md → "External Pi Extensions" for architecture and the
 # step-by-step guide for adding a new entry.
 #
-# Currently empty — no external extensions enabled.
-# The generic npm-extension infrastructure (nix/build-pi-npm-package.nix,
-# nix/packages.nix, nix/home-manager.nix settings.json merge, stow/setup.sh
-# EXTERNAL_PI_PACKAGES) is intentionally preserved so re-adding an
-# extension is a registry-only change.
+# Two entry types are supported:
+# - `type = "npm"`: third-party npm package, installed via Pi's package
+#   manager from ~/.pi/agent/npm/node_modules/ and registered in
+#   settings.json. Needs `package`, `version`, `hash`, `npmDepsHash`.
+# - `type = "file"`: single extension file fetched from a URL, deployed
+#   directly to ~/.pi/agent/extensions/<filename>. Needs `filename`,
+#   `url`, `hash`. For extensions whose upstream is a plain file in a
+#   git repo (not an npm package).
 {
+  # Herdr agent-state reporting for Pi — lets Herdr resume the same Pi
+  # session after a server restart and report working/blocked/idle state
+  # instead of reading the screen. Replaces `herdr integration install pi`.
+  # https://herdr.dev/docs/integrations/#pi
+  # Source: https://github.com/herdrdev/herdr/blob/v0.8.2/src/integration/assets/pi/herdr-agent-state.ts
+  "herdr-agent-state" = {
+    type = "file";
+    filename = "herdr-agent-state.ts";
+    # Pinned to the v0.8.2 tag commit (immutable). Keep in sync with the
+    # deployed herdr binary — extension/binary protocol must match.
+    url = "https://raw.githubusercontent.com/herdrdev/herdr/9eb521456ac0d19d3ab3d9d7cea3cca10baa8a4c/src/integration/assets/pi/herdr-agent-state.ts";
+    hash = "sha256-mxxBzXJSD8Kr5fKirsmVwSqSbM6ETfRyx/1fyuT02/o=";
+    description = "Herdr agent-state reporting for Pi (session restore + working/blocked/idle)";
+  };
+
   # Preserved example (disabled): pi-mcp-adapter — Use MCP servers with Pi
   # without burning context.
   # https://pi.dev/packages/pi-mcp-adapter

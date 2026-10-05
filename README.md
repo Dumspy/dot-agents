@@ -216,12 +216,17 @@ Rules and masks are merged with project-local `.pi/permissions.json` (project ta
 ## External Pi Extensions
 
 In addition to local extensions in `pi/extensions/`, dot-agents supports external
-Pi extensions — third-party npm packages that Pi loads via its package manager.
+Pi extensions in two flavors:
+
+- `type = "npm"` — third-party npm packages that Pi loads via its package manager.
+- `type = "file"` — a single extension file fetched from a URL (for upstreams
+  that ship a plain file rather than an npm package), deployed directly to
+  `~/.pi/agent/extensions/<filename>`.
 
 The registry at `nix/pi-external-extensions.nix` is the single source of truth
 for which external extensions are available.
 
-### How it works
+### How it works (npm type)
 
 Pi discovers external extensions through `settings.json` → `packages`:
 
@@ -235,15 +240,22 @@ Pi resolves packages from `~/.pi/agent/npm/node_modules/<name>/` (global) or `.p
 (project). Each package declares its extension entry point in its `package.json`
 under the `pi.extensions` field.
 
+File-type entries skip the package manager entirely — the fetched file lands
+in `~/.pi/agent/extensions/` next to the bundled extensions, so no
+`settings.json` entry is needed.
+
 ### Architecture
 
 ```
 nix/pi-external-extensions.nix    ← single source of truth (registry)
-  ├── Nix: packages.nix builds each npm package as a fixed-output derivation
-  │         home-manager.nix deploys to ~/.pi/agent/npm/node_modules/<name>/
-  │         + merges packages into ~/.pi/agent/settings.json
-  └── Stow: stow-tree.nix includes a settings.json with packages array
-            setup.sh runs `pi install npm:<name>` if pi CLI is available
+  ├── Nix (npm): packages.nix builds each npm package as a fixed-output derivation
+  │               home-manager.nix deploys to ~/.pi/agent/npm/node_modules/<name>/
+  │               + merges packages into ~/.pi/agent/settings.json
+  ├── Nix (file): packages.nix fetches the pinned file
+  │                home-manager.nix overlays it into the extensions bundle
+  │                (~/.pi/agent/extensions/<filename>)
+  └── Stow (npm only): stow-tree.nix includes a settings.json with packages array
+                        setup.sh runs `pi install npm:<name>` if pi CLI is available
 ```
 
 Both paths are reproducible:
@@ -269,7 +281,10 @@ programs.dot-agents = {
 };
 ```
 
-Available extensions: none (registry currently empty — see `nix/pi-external-extensions.nix` for the preserved `pi-mcp-adapter` example)
+Available extensions: `herdr-agent-state` (file type — Herdr agent-state reporting
+for Pi, fetched from [herdrdev/herdr](https://github.com/herdrdev/herdr)).
+The preserved `pi-mcp-adapter` npm example in `nix/pi-external-extensions.nix`
+shows the npm-type schema.
 
 ### Non-Nix (stow)
 
@@ -279,6 +294,24 @@ If Pi isn't installed yet, the settings are in place and packages will be
 installed when `pi install` is run later.
 
 ### Adding a new external extension
+
+**File-type entries (single file from a URL)** — for upstreams that ship a
+plain extension file rather than an npm package:
+
+```nix
+"my-extension" = {
+  type = "file";
+  filename = "my-extension.ts";   # destination under ~/.pi/agent/extensions/
+  url = "https://...";            # pin to an immutable commit/tag
+  hash = "";                      # fill via: nix store prefetch-file <url>
+  description = "What this extension does";
+};
+```
+
+Then verify with `nix build .#my-extension` and skip to Step 6 below
+(no lockfile, no stow entry — file type is Nix-only).
+
+**npm-type entries** follow the full flow:
 
 **Step 1 — Register the extension**
 

@@ -37,13 +37,29 @@
       metaDescription = spec.description or spec.package;
     };
 
+  # Fetch a single-file external Pi extension (`type = "file"`).
+  # The derivation output *is* the extension file, deployed verbatim to
+  # ~/.pi/agent/extensions/<filename> by home-manager.nix.
+  mkPiFileExtension = name: spec:
+    pkgs.fetchurl {
+      url = spec.url;
+      hash = spec.hash;
+    };
+
   skillPackages = lib.mapAttrs mkSkillPackage skillRegistry;
 
   npmExts = lib.filterAttrs (_: spec: spec.type == "npm") piExtRegistry;
   extPackages = lib.mapAttrs mkPiNpmPackage npmExts;
 
+  fileExts = lib.filterAttrs (_: spec: spec.type == "file") piExtRegistry;
+  filePackages = lib.mapAttrs mkPiFileExtension fileExts;
+
+  allPackages = skillPackages // extPackages // filePackages;
+
   collisions = lib.intersectLists (builtins.attrNames skillPackages) (builtins.attrNames extPackages);
+  fileNameCollisions = lib.filter (name: lib.elem name (builtins.attrNames skillPackages)) (builtins.attrNames filePackages);
 in
   assert lib.assertMsg (collisions == [])
   "packages.nix: skill and extension names collide: ${lib.concatStringsSep ", " collisions}. Rename one.";
-    skillPackages // extPackages
+  assert lib.assertMsg (fileNameCollisions == [])
+  "packages.nix: file extension and skill names collide: ${lib.concatStringsSep ", " fileNameCollisions}. Rename one."; allPackages
