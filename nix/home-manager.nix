@@ -80,7 +80,6 @@
   isFileExt = name: (piExternalExtRegistry.${name}.type or "npm") == "file";
   enabledFileExts = lib.filter isFileExt enabledExternalExts;
   enabledNpmExts = lib.filter (name: !(isFileExt name)) enabledExternalExts;
-  npmRegistryNames = lib.filter (name: !(isFileExt name)) allExternalExtNames;
 
   externalExtPkgs = lib.genAttrs enabledExternalExts (
     name: self.packages.${pkgs.stdenv.hostPlatform.system}.${name}
@@ -102,9 +101,12 @@
     packages = externalExtSettingsPackages;
   };
 
-  # All registry npm package names (for cleanup of previously-enabled packages)
-  allRegistryPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") npmRegistryNames;
-  allRegistryPackagesJson = builtins.toJSON allRegistryPackages;
+  # Bare npm package names (no `npm:` prefix, no `@version` suffix) currently
+  # enabled. settings.json `packages` is managed authoritatively from this
+  # list, so removing an entry here (or from the registry) removes it from
+  # the machine on the next rebuild — no tombstone list needed.
+  enabledNpmBare = map (name: piExternalExtRegistry.${name}.package) enabledNpmExts;
+  enabledNpmBareJson = builtins.toJSON (lib.unique enabledNpmBare);
 
   piExtensionsBundle =
     pkgs.runCommand "dot-agents-pi-extensions-bundle" {
@@ -484,35 +486,60 @@ in {
         "install-dot-agents-pi-extensions" =
           mkRsyncActivation piExtensionsBundle "${config.home.homeDirectory}/.pi/agent/extensions" cfg.structure;
       })
-      # Sync registry-managed packages into Pi's settings.json.
-      # Adds enabled packages, removes disabled ones, preserves user-installed packages.
-      (lib.mkIf (enabledNpmExts != [] || cfg.pi.externalExtensions != null) {
+      # settings.json `packages` is managed authoritatively: exactly the
+      # enabled npm extensions, nothing else. Removing an entry from
+      # `externalExtensions` (or from the registry) removes it from
+      # settings.json on the next rebuild, so Pi never tries to
+      # `npm install` a stale package (hard `spawn npm ENOENT` crash when
+      # npm is not on PATH). Other settings.json keys are preserved.
+      # NOTE: packages installed manually via `pi install` are dropped on
+      # rebuild — declare them in nix/pi-external-extensions.nix instead.
+      {
         "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
           export PATH="${pkgs.jq}/bin:$PATH"
           SETTINGS="${config.home.homeDirectory}/.pi/agent/settings.json"
-          REGISTRY_PACKAGES='${allRegistryPackagesJson}'
           OUR_PACKAGES='${externalExtSettingsJson}'
+          ENABLED_BARE='${enabledNpmBareJson}'
 
           mkdir -p "$(dirname "$SETTINGS")"
 
           if [ -f "$SETTINGS" ]; then
-            jq --argjson registry "$REGISTRY_PACKAGES" --argjson ours "$OUR_PACKAGES" \
-              '. as $s |
-               $s + {
-                 packages: (
-                   (($s.packages // []) | map(select(. as $pkg | $registry | index($pkg) | not))) +
-                   $ours.packages
-                 ) | unique
-               }' \
-              "$SETTINGS" > "$SETTINGS.tmp"
-            mv "$SETTINGS.tmp" "$SETTINGS"
+            jq --argjson ours "$OUR_PACKAGES" \
+              '. as $s | $s + { packages: ($ours.packages | unique) }' \
+              "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
           else
             echo "$OUR_PACKAGES" > "$SETTINGS"
           fi
 
           chmod 644 "$SETTINGS"
+
+          # Prune Nix-deployed package symlinks that are no longer enabled
+          # (home.file leaves them behind). Only symlinks are touched, and
+          # only when they point into /nix/store or dangle — real
+          # directories (e.g. manually `pi install`ed) are never deleted.
+          # Nested paths (inside a package dir) are never touched either.
+          NPM_DIR="${config.home.homeDirectory}/.pi/agent/npm/node_modules"
+          if [ -d "$NPM_DIR" ]; then
+            find "$NPM_DIR" -maxdepth 2 -type l -print | while IFS= read -r link; do
+              rel="''${link#$NPM_DIR/}"
+              case "$rel" in
+                *?/*?/*) continue ;; # nested inside a package dir — never touch
+                @*/?*) : ;; # direct child of a scope dir — candidate
+                ?*/?*) continue ;; # inside a real top-level dir — never touch
+                *) : ;; # top-level — candidate
+              esac
+              if printf '%s' "$ENABLED_BARE" | jq -e --arg n "$rel" 'index($n) == null' >/dev/null; then
+                target=$(readlink "$link")
+                case "$target" in
+                  /nix/store/*) rm -f "$link" ;;
+                  *) [ -e "$link" ] || rm -f "$link" ;;
+                esac
+              fi
+            done
+            find "$NPM_DIR" -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null || true
+          fi
         '';
-      })
+      }
     ];
   };
 }
