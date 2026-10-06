@@ -10,6 +10,10 @@
 #   directly to ~/.pi/agent/extensions/<filename>. Needs `filename`,
 #   `url`, `hash`. For extensions whose upstream is a plain file in a
 #   git repo (not an npm package).
+#
+# NOTE: removing an entry is self-cleaning — settings.json `packages` is
+# managed authoritatively from the enabled entries (see nix/home-manager.nix
+# and stow/setup.sh), so nothing else needs updating on removal.
 {
   # Herdr agent-state reporting for Pi — lets Herdr resume the same Pi
   # session after a server restart and report working/blocked/idle state
