@@ -134,6 +134,7 @@ function checkExfilShape(command: string): FloorHit | null {
 }
 
 function isCredentialPath(path: string): boolean {
+	const lower = path.toLowerCase();
 	return (
 		path.includes("/.ssh/") ||
 		path.endsWith("/.ssh") ||
@@ -143,8 +144,17 @@ function isCredentialPath(path: string): boolean {
 		path.endsWith("/.aws") ||
 		path.includes("/.kube/") ||
 		path.endsWith("/.kube") ||
+		path.includes("/.docker/") ||
+		path.endsWith("/.docker") ||
+		// Reading secrets into agent context exfiltrates them to the chat
+		// provider — block, don't judge. Same for Trust-on-read exec files.
+		path.includes("/secrets/") ||
+		path.endsWith("/secrets") ||
+		lower.endsWith(".envrc") ||
 		/\.p(e)?m$/.test(path) ||
-		/\.key$/.test(path)
+		/\.key$/i.test(path) ||
+		/\.p12$/.test(path) ||
+		/\.pfx$/.test(path)
 	);
 }
 

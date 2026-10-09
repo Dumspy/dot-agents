@@ -65,6 +65,15 @@ describe("checkFloor exfil shapes", () => {
 });
 
 describe("checkPathFloor", () => {
+	it("blocks the full secret class, since reads exfiltrate to the chat provider", () => {
+		expect(checkPathFloor("/proj/config/secrets/db.json", false)?.reason).toBe("credential-store");
+		expect(checkPathFloor("/proj/config/secrets/db.json", true)?.reason).toBe("credential-store");
+		expect(checkPathFloor("/proj/.envrc", false)?.reason).toBe("credential-store");
+		expect(checkPathFloor("/proj/.docker/config.json", false)?.reason).toBe("credential-store");
+		expect(checkPathFloor("/proj/cert.p12", false)?.reason).toBe("credential-store");
+		expect(checkPathFloor("/proj/cert.pfx", true)?.reason).toBe("credential-store");
+	});
+
 	it("blocks credential stores for reads and writes", () => {
 		expect(checkPathFloor("/home/u/.ssh/id_ed25519", false)?.reason).toBe("credential-store");
 		expect(checkPathFloor("/home/u/.ssh/id_ed25519", true)?.reason).toBe("credential-store");
