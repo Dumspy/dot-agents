@@ -188,6 +188,27 @@ export function checkPathFloor(resolvedPath: string, isWrite: boolean): FloorHit
 }
 
 /**
+ * Reads that deserve a semantic second opinion (floor already passed):
+ * outside the workspace, or secret-adjacent names. Everything else reads free.
+ */
+export function shouldJudgeRead(resolvedPath: string, cwd: string): boolean {
+	if (isOutsideWorkspace(resolvedPath, cwd)) return true;
+	const base = resolvedPath.toLowerCase();
+	return (
+		/(^|\/)\.env[^/]*$/.test(base) ||
+		base.includes("secret") ||
+		base.includes("credential") ||
+		/\.p(e)?m$/.test(base) ||
+		/\.key$/.test(base)
+	);
+}
+
+function isOutsideWorkspace(resolvedPath: string, cwd: string): boolean {
+	if (resolvedPath === cwd) return false;
+	return !resolvedPath.startsWith(cwd.endsWith("/") ? cwd : cwd + "/");
+}
+
+/**
  * Run the full floor check. `value` is the tool's primary value: command text
  * for bash, resolved path for read/write/edit, URL for webfetch (floor only
  * applies URL checks to bash exfil shapes; plain fetches go to the judge).

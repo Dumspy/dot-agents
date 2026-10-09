@@ -18,7 +18,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { BlockBuffer, describeBlocked, PendingApproval, type BlockedCall } from "./approvals.js";
 import { decideSafety } from "./decide.js";
-import { checkFloor, type FloorHit } from "./floor.js";
+import { checkFloor, shouldJudgeRead, type FloorHit } from "./floor.js";
 import {
 	DEFAULT_JUDGE_CONFIG,
 	modelKey,
@@ -207,12 +207,18 @@ export default function judgeGate(pi: ExtensionAPI) {
 			};
 		}
 
-		// 3. Reads are floor-checked only, never judged.
-		if (toolName === "read") {
+		// 3. Writes/edits are floor-checked only, never judged.
+		if (toolName === "write" || toolName === "edit") {
 			return undefined;
 		}
 
-		// 4. Semantic judge.
+		// 4. Reads go to the judge only when the target looks worth a
+		// second opinion (outside workspace or secret-adjacent).
+		if (toolName === "read" && !shouldJudgeRead(value, ctx.cwd)) {
+			return undefined;
+		}
+
+		// 5. Semantic judge (bash, webfetch, and flagged reads).
 		const thresholds = resolveThresholds(config);
 		const outcome = await runJudge(ctx.modelRegistry, config, toolName, value, ctx.cwd, ctx.signal);
 

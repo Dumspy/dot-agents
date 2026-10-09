@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkFloor, checkPathFloor } from "./floor.js";
+import { checkFloor, checkPathFloor, shouldJudgeRead } from "./floor.js";
 
 describe("checkFloor bash shapes", () => {
 	it("blocks recursive force deletion", () => {
@@ -90,6 +90,16 @@ describe("checkPathFloor", () => {
 		expect(checkPathFloor("/proj/src/index.ts", false)).toBeNull();
 		expect(checkPathFloor("/proj/src/index.ts", true)).toBeNull();
 		expect(checkPathFloor("/proj/README.md", true)).toBeNull();
+	});
+
+	it("flags reads worth a second opinion", () => {
+		expect(shouldJudgeRead("/proj/src/index.ts", "/proj")).toBe(false);
+		expect(shouldJudgeRead("/proj/README.md", "/proj")).toBe(false);
+		expect(shouldJudgeRead("/proj/.env", "/proj")).toBe(true);
+		expect(shouldJudgeRead("/proj/config/secrets.json", "/proj")).toBe(true);
+		expect(shouldJudgeRead("/etc/passwd", "/proj")).toBe(true);
+		expect(shouldJudgeRead("/other/repo/src/a.ts", "/proj")).toBe(true);
+		expect(shouldJudgeRead("/proj", "/proj")).toBe(false);
 	});
 
 	it("routes through checkFloor by tool", () => {
