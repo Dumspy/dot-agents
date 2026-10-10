@@ -35,10 +35,9 @@ function stripGitEnvPrefix(command: string): string {
 	return command.startsWith(GIT_ENV_PREFIX) ? command.slice(GIT_ENV_PREFIX.length) : command;
 }
 
-/** Portion of a bash command before the first sequencing operator (; && ||). Single pipes kept. */
-function firstSequenceSegment(command: string): string {
-	const idx = command.search(/;|&&|\|\|/);
-	return idx === -1 ? command : command.slice(0, idx);
+/** Split a command on sequencing operators (; && ||). Single pipes stay intact. */
+function sequenceSegments(command: string): string[] {
+	return command.split(/;|&&|\|\|/).map((seg) => seg.trim()).filter((seg) => seg.length > 0);
 }
 
 interface BashShape {
@@ -71,32 +70,48 @@ const BASH_SHAPES: readonly BashShape[] = [
 	{
 		reason: "force-push",
 		detail: "Force-pushing rewrites shared history and is never done autonomously. Push it yourself.",
-		match: (c) => {
-			const seg = firstSequenceSegment(c);
-			return /^\s*git\s+push\b/.test(seg) && /(^|\s)(--force|--force-with-lease|-f)(?=\s|$)/.test(seg);
-		},
+		match: (c) => /^\s*git\s+push\b/.test(c) && /(^|\s)(--force|--force-with-lease|-f)(?=\s|$)/.test(c),
 	},
 	{
 		reason: "hard-reset",
 		detail: "Hard resets destroy work and are never done autonomously. Run it yourself.",
-		match: (c) => {
-			const seg = firstSequenceSegment(c);
-			return /\bgit\s+reset\s+--hard\b/.test(seg);
-		},
+		match: (c) => /\bgit\s+reset\s+--hard\b/.test(c),
 	},
 	{
 		reason: "remote-code-execution",
 		detail: "Downloading code and piping it to a shell is never done autonomously. Inspect it and run it yourself.",
 		match: (c) => /\b(curl|wget)\b[\s\S]*\|\s*(sudo\s+)?(sh|bash|zsh|fish|dash)\b/.test(c),
 	},
+	{
+		// Dumping the environment (or named secrets) into output ships secrets
+		// to the chat provider via tool results. No network needed.
+		reason: "secret-dump",
+		detail: "Dumping secrets or the environment into output is never done autonomously. Inspect them yourself.",
+		match: (c) =>
+			/\b(env|printenv|set)\b[^|;&]*\|\s*(grep|rg|cat|less|more|head|tail|awk|sed|tee|sort|uniq|cut|tr|wc)\b/.test(c) ||
+			/^\s*(env|printenv)\s*$/.test(c) ||
+			/^\s*set\s*$/.test(c) ||
+			/\becho\b[^|;&]*\$[A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)\b/i.test(c),
+	},
 ];
 
 function checkBashShape(command: string): FloorHit | null {
 	const clean = stripGitEnvPrefix(command.trim());
 	if (!clean) return null;
+	// Whole-command shapes first (they span pipes).
 	for (const shape of BASH_SHAPES) {
-		if (shape.match(clean)) {
+		if (shape.reason === "remote-code-execution" && shape.match(clean)) {
 			return { category: "bash-shape", reason: shape.reason, detail: shape.detail };
+		}
+	}
+	// Every other shape applies per sequence segment: `echo hi; sudo rm -rf /`
+	// must not slip past a start-anchored match.
+	for (const segment of sequenceSegments(clean)) {
+		for (const shape of BASH_SHAPES) {
+			if (shape.reason === "remote-code-execution") continue;
+			if (shape.match(segment)) {
+				return { category: "bash-shape", reason: shape.reason, detail: shape.detail };
+			}
 		}
 	}
 	return null;

@@ -226,6 +226,33 @@ the borderline (0.840/0.681 — both axes just miss); piped-shell prompts
 read-env allows (0.884/0.77) where Jev prompts. Tentative: run clef at
 defaults, no special profile.
 
+## Replay dogfood (2026-10-10, 8,343-row permission log)
+
+222 unique calls (all 84 deny-uniques + stratified routine sample) through
+the real floor/decide/judge code, Jev @ t=0.85/c=0.7, 167 live judgments:
+
+| actual \ new | allowed | floor-blocked | prompted | blocked |
+|---|---|---|---|---|
+| free (69) | 69 | 0 | 0 | 0 |
+| prompted (69) | 63 | 0 | 5 | 1 |
+| denied (84) | 54 | 11 | 18 | 1 |
+
+- Zero new prompts on calls that used to pass free; 91% of old prompts
+  now auto-allow. The nag reduction is real.
+- The 54 allowed-but-denied are near-all benign routine work the old
+  system nagged on (git commits, pip installs, cat+rg, nix-store greps)
+  plus node_modules/pi-docs reads the judge correctly allows.
+- Denied-row floor-blocks all correct (rm -rf chains, sourced cookies,
+  sudo gc, .ssh, .envrc, .env write).
+- Two replay findings fixed in code: (1) floor shapes now match per
+  `;`/`&&`/`||` segment (`echo hi; sudo du` slipped start-anchored
+  rules); (2) new `secret-dump` floor shape (`env|printenv|set` piped to
+  filters, bare `env`, `echo $SECRET_VAR`) — env dumps exfiltrate to the
+  chat provider via tool results with no network involved.
+- Two `git commit`-ish replay blocks (p~0.12) did not reproduce: 6-case git
+  follow-up shows add/commit/stash/checkout allow, push/merge prompt on
+  low confidence. Tail noise; `/allow` covers it.
+
 ## Open (deferred, not blocking v1)
 
 - Auto-retry of approved calls (needs upstream `executeTool`-in-command support).

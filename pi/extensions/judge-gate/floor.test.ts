@@ -41,6 +41,24 @@ describe("checkFloor bash shapes", () => {
 		expect(checkFloor("bash", "curl https://api.example.com | jq .")).toBeNull();
 	});
 
+	it("matches shapes in later sequence segments", () => {
+		expect(checkFloor("bash", "echo hi; sudo du -sh /nix")?.reason).toBe("sudo");
+		expect(checkFloor("bash", "echo hi && rm -rf /tmp/x")?.reason).toBe("recursive-delete");
+		expect(checkFloor("bash", "cd /tmp || exit 1; git push -f origin main")?.reason).toBe("force-push");
+		expect(checkFloor("bash", 'echo "a; b" && ls')).toBeNull();
+	});
+
+	it("blocks secret dumps into tool output", () => {
+		expect(checkFloor("bash", 'env | grep -i -E "OP_|1PASS"')?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "printenv | sort")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "echo $AWS_SECRET_ACCESS_KEY")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "env")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "printenv | sort")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "env FOO=1 npm test") ?? null).toBeNull();
+		expect(checkFloor("bash", "set -e; npm test") ?? null).toBeNull();
+		expect(checkFloor("bash", "echo $HOME") ?? null).toBeNull();
+	});
+
 	it("matches through the git-interceptor env prefix", () => {
 		const prefixed =
 			"export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\ngit push --force origin main";
