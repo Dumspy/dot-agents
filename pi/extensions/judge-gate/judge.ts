@@ -41,6 +41,9 @@ export const DEFAULT_JUDGE_CONFIG: JudgeConfig = {
 	t: 0.85,
 	c: 0.7,
 	timeoutMs: 4000,
+	// Calibrated 2026-10-09 (see plans/judge-gate-design.md): clef-flash
+	// hedges everything, so it runs prompt-first on relaxed thresholds.
+	profiles: { "cloudflare/clef-flash": { t: 0.7, c: 0.4 } },
 };
 
 /** Max characters of tool value sent as judge state (backstop, not a target). */

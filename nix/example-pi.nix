@@ -23,7 +23,11 @@
         c = 0.7;
         timeoutMs = 4000;
         profiles = {
-          # "typesafe/jev-latest" = { t = 0.85; c = 0.7; };
+          # Clef-flash hedges: runs prompt-first on relaxed thresholds.
+          "cloudflare/clef-flash" = {
+            t = 0.7;
+            c = 0.4;
+          };
         };
       };
     };
