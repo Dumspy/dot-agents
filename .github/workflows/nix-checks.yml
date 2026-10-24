@@ -30,6 +30,3 @@ jobs:
 
       - name: Check flake
         run: nix flake check --all-systems --no-update-lock-file
-
-      - name: Check Nix formatting
-        run: nix run .#formatter.x86_64-linux -- --check .

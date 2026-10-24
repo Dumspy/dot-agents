@@ -31,6 +31,6 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
-      # `nix develop -c` runs the devshell hook. That hook must not `cd`.
+      # The dev shell stays at the repo root, so npm must target pi/.
       - name: Install, typecheck, and test
         run: nix develop -c bash -c 'npm ci --prefix pi && npm --prefix pi run check && npm --prefix pi test'
