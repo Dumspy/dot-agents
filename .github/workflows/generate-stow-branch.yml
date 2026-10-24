@@ -1,7 +1,5 @@
 name: Generate Stow Branch
 
-# No pull_request trigger. contents: write is on this job, and the job only
-# runs for a push to the default branch or a manual dispatch.
 on:
   push:
     branches: [development]
@@ -16,7 +14,6 @@ concurrency:
 
 jobs:
   generate-stow:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/development')
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -29,10 +26,6 @@ jobs:
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            keep-env-derivations = true
-            keep-outputs = true
 
       - name: Build stow tree
         run: |

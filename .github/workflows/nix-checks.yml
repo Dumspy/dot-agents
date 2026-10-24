@@ -1,8 +1,7 @@
 name: Nix Checks
 
-# Fork PRs are held by the repo setting "Require approval for all external
-# contributors". The job if is defence in depth. pull_request_target is
-# not used: it bypasses that setting and runs with the base repo's token.
+# Fork PRs are held by "Require approval for all external contributors".
+# The job if below is defence in depth.
 on:
   push:
     branches:
@@ -25,15 +24,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-        with:
-          persist-credentials: false
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            keep-env-derivations = true
-            keep-outputs = true
 
       - name: Check flake
         run: nix flake check --all-systems --no-update-lock-file
