@@ -1,13 +1,14 @@
 name: Nix Checks
 
-# `pull_request_target` loads this file from the base branch, so a fork cannot
-# edit the guard below. Fork jobs are skipped before checkout. Same-repo PRs,
-# including Dependabot, still run against the PR head.
+# Fork PRs are held by the repo setting "Require approval for all external
+# contributors". The job `if` is defence in depth for any run that does start.
+# `pull_request` (not `pull_request_target`) keeps the token and cache in the
+# PR scope.
 on:
   push:
     branches:
       - development
-  pull_request_target:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -19,14 +20,13 @@ concurrency:
 
 jobs:
   nix-checks:
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       - name: Install Nix
