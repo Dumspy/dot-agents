@@ -26,10 +26,14 @@ Add as a flake input:
 inputs.dot-agents = {
   url = "github:<you>/dot-agents";
   inputs.nixpkgs.follows = "nixpkgs";
+  # Home Manager is an input of this flake only so `nix flake check` can
+  # evaluate the module. Follow the consumer's copy to avoid a second one.
+  inputs.home-manager.follows = "home-manager";
 };
 ```
 
-Import the module and enable:
+Import the module and enable. `homeManagerModules.default` is the same module
+for flakes that use that output name:
 
 ```nix
 # home.nix

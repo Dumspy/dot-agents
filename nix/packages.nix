@@ -11,7 +11,7 @@
   # If a skill needs compilation (e.g. TypeScript extensions),
   # create a proper default.nix for it instead.
   mkSkillPackage = name: spec: let
-    path = spec.path;
+    inherit (spec) path;
     safeName = lib.replaceStrings ["/"] ["-"] name;
   in
     pkgs.runCommand "skill-${safeName}" {
@@ -29,10 +29,8 @@
   # and pins transitive deps so `npm ci` is deterministic.
   mkPiNpmPackage = name: spec:
     pkgs.callPackage ./build-pi-npm-package.nix {
+      inherit (spec) version hash npmDepsHash;
       packageName = spec.package;
-      version = spec.version;
-      hash = spec.hash;
-      npmDepsHash = spec.npmDepsHash;
       packageLock = ./external-locks + "/${spec.package}-${spec.version}.package-lock.json";
       metaDescription = spec.description or spec.package;
     };
@@ -40,10 +38,9 @@
   # Fetch a single-file external Pi extension (`type = "file"`).
   # The derivation output *is* the extension file, deployed verbatim to
   # ~/.pi/agent/extensions/<filename> by home-manager.nix.
-  mkPiFileExtension = name: spec:
+  mkPiFileExtension = _name: spec:
     pkgs.fetchurl {
-      url = spec.url;
-      hash = spec.hash;
+      inherit (spec) url hash;
     };
 
   skillPackages = lib.mapAttrs mkSkillPackage skillRegistry;

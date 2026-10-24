@@ -133,7 +133,7 @@
   # Generate permissions.json from Nix config
   permissionsJson = pkgs.writeText "pi-permissions.json" (builtins.toJSON {
     rules = cfg.pi.permissions;
-    masks = cfg.pi.masks;
+    inherit (cfg.pi) masks;
   });
 
   # Generate keybindings.json from Nix config

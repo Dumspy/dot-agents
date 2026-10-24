@@ -5,7 +5,7 @@
   externalSources,
 }: let
   registry = import ./skills.nix {inherit externalSources;};
-  system = pkgs.stdenv.hostPlatform.system;
+  inherit (pkgs.stdenv.hostPlatform) system;
 
   # All skill packages (filter to only registry entries to avoid self-reference)
   skillPkgs = lib.genAttrs (builtins.attrNames registry) (

@@ -4,19 +4,25 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    # Used only by `checks` (`homeManagerConfiguration`). `homeModules` does
+    # not import it. Consumers should follow their own Home Manager so the
+    # lock does not grow a second copy:
+    #   inputs.<name>.inputs.home-manager.follows = "home-manager";
     home-manager = {
-      url = "github:nix-community/home-manager";
+      url = "github:nix-community/home-manager/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Dev shell and `nix flake check` only. Not used by homeModules or packages.
+    # Consumers still lock it (and its flake-compat / gitignore inputs).
     git-hooks = {
-      url = "github:cachix/git-hooks.nix";
+      url = "github:cachix/git-hooks.nix/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # External skill sources
+    # External skill sources. `flake = false` keeps this a plain source tree.
     anthropics-agent-skills = {
-      url = "github:anthropics/skills";
+      url = "github:anthropics/skills/main";
       flake = false;
     };
   };
@@ -28,6 +34,8 @@
     git-hooks,
     anthropics-agent-skills,
   }: let
+    # x86_64-darwin still evaluates on nixos-unstable, with a removal warning.
+    # aarch64-linux and x86_64-darwin pi-node-modules hashes are placeholders.
     systems = [
       "x86_64-linux"
       "aarch64-linux"
@@ -35,7 +43,7 @@
       "x86_64-darwin"
     ];
 
-    lib = nixpkgs.lib;
+    inherit (nixpkgs) lib;
 
     eachSystem = f:
       lib.genAttrs systems (
@@ -45,6 +53,15 @@
             src = ./.;
             hooks = {
               alejandra.enable = true;
+              deadnix = {
+                enable = true;
+                settings = {
+                  # Match the owner's dotfiles devenv hook: module arguments
+                  # such as `{ config, lib, ... }` are part of the signature.
+                  noLambdaArg = true;
+                  noLambdaPatternNames = true;
+                };
+              };
             };
           };
         in
@@ -56,6 +73,20 @@
     # External skill sources passed to the registry
     externalSources = {
       inherit anthropics-agent-skills;
+    };
+
+    homeModule = import ./nix/home-manager.nix {inherit self externalSources;};
+
+    # Minimal Home Manager user for module evaluation. Darwin homes are /Users.
+    testUser = pkgs: {
+      home = {
+        username = "testuser";
+        homeDirectory =
+          if pkgs.stdenv.hostPlatform.isDarwin
+          then "/Users/testuser"
+          else "/home/testuser";
+        stateVersion = "24.11";
+      };
     };
   in {
     packages = eachSystem (
@@ -81,24 +112,47 @@
         pre-commit-check,
         ...
       }: let
-        # Minimal home-manager configuration to validate the module evaluates
-        # and all fixed-output derivations (e.g. pi-node-modules) build.
-        hmConfig = home-manager.lib.homeManagerConfiguration {
-          inherit pkgs;
-          modules = [
-            self.homeModules.default
-            {
-              home.username = "testuser";
-              home.homeDirectory = "/home/testuser";
-              home.stateVersion = "24.11";
-              programs.dot-agents.enable = true;
-            }
-          ];
-        };
+        evalHome = extra:
+          (home-manager.lib.homeManagerConfiguration {
+            inherit pkgs;
+            modules = [
+              self.homeModules.default
+              (testUser pkgs)
+              extra
+            ];
+          }).activationPackage;
       in {
         inherit pre-commit-check;
-        pi-node-modules = self.packages.${system}.pi-node-modules;
-        home-manager-module = hmConfig.activationPackage;
+        inherit
+          (self.packages.${system})
+          pi-node-modules
+          stow-tree
+          herdr-agent-state
+          ;
+        # statix exits 0 on warnings, so fail the check when it prints any.
+        statix = pkgs.runCommand "statix-check" {nativeBuildInputs = [pkgs.statix];} ''
+          set +e
+          log=$(statix check --format errfmt ${./.} 2>&1)
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ] || [ -n "$log" ]; then
+            printf '%s\n' "$log" >&2
+            exit 1
+          fi
+          touch $out
+        '';
+        # Defaults: rsync install, external extensions off.
+        home-manager-module = evalHome {
+          programs.dot-agents.enable = true;
+        };
+        # Link install plus every registry extension (the dotfiles shape).
+        home-manager-module-linked = evalHome {
+          programs.dot-agents = {
+            enable = true;
+            structure = "link";
+            pi.externalExtensions = null;
+          };
+        };
       }
     );
 
@@ -111,12 +165,26 @@
         shellHook =
           pre-commit-check.shellHook
           + ''
-            cd pi && npm install
+            # Stay in the caller's directory. `cd` made `nix develop -c`
+            # run in pi/ (CI's alejandra --check then missed the Nix files).
+            if [ -f pi/package.json ]; then
+              npm install --prefix pi
+            fi
           '';
-        packages = [pkgs.nodejs pkgs.rsync pkgs.alejandra];
+        packages = [
+          pkgs.nodejs
+          pkgs.rsync
+          pkgs.alejandra
+          pkgs.deadnix
+          pkgs.statix
+        ];
       };
     });
 
-    homeModules.default = import ./nix/home-manager.nix {inherit self externalSources;};
+    homeModules.default = homeModule;
+
+    # Same module. `homeModules` is the name Home Manager documents;
+    # `homeManagerModules` is the other name in wide use.
+    homeManagerModules = self.homeModules;
   };
 }

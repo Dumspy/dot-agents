@@ -12,6 +12,7 @@
       },
       "original": {
         "owner": "anthropics",
+        "ref": "main",
         "repo": "skills",
         "type": "github"
       }
@@ -50,6 +51,7 @@
       },
       "original": {
         "owner": "cachix",
+        "ref": "master",
         "repo": "git-hooks.nix",
         "type": "github"
       }
@@ -91,6 +93,7 @@
       },
       "original": {
         "owner": "nix-community",
+        "ref": "master",
         "repo": "home-manager",
         "type": "github"
       }
