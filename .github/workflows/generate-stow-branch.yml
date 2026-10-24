@@ -5,25 +5,36 @@ on:
     branches: [development]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   generate-stow:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout development
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
+        with:
+          extra_nix_config: |
+            keep-env-derivations = true
+            keep-outputs = true
 
       - name: Build stow tree
         run: |
           nix build .#stow-tree --out-link ./result
-          # Copy the result to a home/ directory
           mkdir -p home
           cp -rL ./result/. home/
-          # Nix store files are read-only; make them writable so we can delete later
           chmod -R +w home/
 
       - name: Commit to stow branch
@@ -31,7 +42,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Check if stow branch exists, create if not
           if git show-ref --verify --quiet refs/heads/stow; then
             git checkout stow
           else
@@ -39,14 +49,11 @@ jobs:
             git rm -rf .
           fi
 
-          # Remove everything except .git and home (which we'll copy from)
           find . -mindepth 1 -not -path './.git/*' -not -name '.git' -not -path './home/*' -not -name 'home' -delete
 
-          # Copy home directory
           cp -r home/. .
           rm -rf home
 
-          # Commit
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to commit"
@@ -55,4 +62,6 @@ jobs:
           git commit -m "Update stow tree from development ($(git rev-parse --short HEAD))"
 
       - name: Push stow branch
-        run: git push origin stow --force
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:stow
