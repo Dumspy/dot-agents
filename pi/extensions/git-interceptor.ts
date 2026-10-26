@@ -14,7 +14,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { GIT_ENV_PREFIX } from "./permission-system/lib.js";
+/** Must match the prefix stripped by the judge-gate floor (floor.ts). */
+const GIT_ENV_PREFIX = "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\n";
 
 const NO_VERIFY_RE = /--no-verify\b/;
 
