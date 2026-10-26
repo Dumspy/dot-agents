@@ -4,6 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    # Only used to evaluate the module in `checks`. The module does not
+    # import it. Consumers should set:
+    #   inputs.<name>.inputs.home-manager.follows = "home-manager";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -111,7 +114,8 @@
         shellHook =
           pre-commit-check.shellHook
           + ''
-            cd pi && npm install
+            # Do not cd. `nix develop -c` would otherwise run in pi/.
+            npm install --prefix pi
           '';
         packages = [pkgs.nodejs pkgs.rsync pkgs.alejandra];
       };

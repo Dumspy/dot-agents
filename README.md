@@ -26,6 +26,9 @@ Add as a flake input:
 inputs.dot-agents = {
   url = "github:<you>/dot-agents";
   inputs.nixpkgs.follows = "nixpkgs";
+  # This flake's Home Manager input is only for `nix flake check`.
+  # Follow yours so the lock does not grow a second copy.
+  inputs.home-manager.follows = "home-manager";
 };
 ```
 

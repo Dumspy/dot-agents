@@ -1,5 +1,6 @@
 name: Pi Checks
 
+# Same fork policy as nix-checks.yml.
 on:
   push:
     branches:
@@ -11,23 +12,25 @@ on:
       - "pi/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pi-checks:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Install NPM dependencies
-        run: nix develop -c bash -c "npm ci"
-
-      - name: Type check
-        run: nix develop -c bash -c "npm run check"
-
-      - name: Run tests
-        run: nix develop -c bash -c "npm test"
+      # The dev shell stays at the repo root, so npm must target pi/.
+      - name: Install, typecheck, and test
+        run: nix develop -c bash -c 'npm ci --prefix pi && npm --prefix pi run check && npm --prefix pi test'
