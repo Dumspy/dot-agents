@@ -1,0 +1,4 @@
+# GNU Stow local ignore list
+# Keep helper scripts in the repo but do not symlink them into $HOME.
+setup.sh
+update.sh
