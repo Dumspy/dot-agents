@@ -2,13 +2,13 @@
 
 This repository is the canonical source for all agent configuration.
 
-Supported agents: Pi, OpenCode, and Grok Bot.
+Supported agents: Pi, OpenCode, Claude Code, and Grok Bot.
 
 ## What's here
 
 | Directory | Purpose |
 |-----------|---------|
-| `skills/` | Universal skills shared by Pi, OpenCode, and Grok Bot |
+| `skills/` | Universal skills shared by Pi, OpenCode, Claude Code, and Grok Bot |
 | `grokbot/skills/` | Skills only Grok Bot reads |
 | `opencode/agents/` | OpenCode subagent definitions |
 | `pi/` | Pi-specific extensions, skills, themes, and permissions |
@@ -18,6 +18,7 @@ Supported agents: Pi, OpenCode, and Grok Bot.
 ## Installation targets
 
 - Universal skills: `~/.agents/skills/` (Pi and OpenCode)
+- Claude Code skills: `~/.claude/skills/<name>/SKILL.md` (symlink to the same registry skill; Claude Code does not read `~/.agents/skills/`)
 - Pi extensions: `~/.pi/agent/extensions/`
 - Pi skills: `~/.pi/agent/skills/`
 - OpenCode agents: `~/.config/opencode/agents/`
@@ -27,30 +28,34 @@ Supported agents: Pi, OpenCode, and Grok Bot.
 
 ## How it gets to the machine
 
-Nix/Home Manager installs Pi and OpenCode artifacts to the targets above. The skill registry is `nix/skills.nix`. `grokbot/skills/` stays out of that registry, so Nix leaves it on GitHub.
+Nix/Home Manager installs Pi, OpenCode, and Claude Code artifacts to the targets above. The skill registry is `nix/skills.nix`. Each registry skill is linked into `~/.claude/skills/<name>` from the same package that supplies `~/.agents/skills/`. `grokbot/skills/` stays out of that registry, so Nix leaves it on GitHub.
 
-Non-Nix: the auto-generated `stow` branch is a GNU Stow tree for the same Pi and OpenCode targets. Stow generation copies only those targets, so `grokbot/` stays on `development`.
+Non-Nix: the auto-generated `stow` branch is a GNU Stow tree for the same targets. `.claude/skills/<name>` is a relative symlink to `.agents/skills/<name>`. Stow generation copies only those targets, so `grokbot/` stays on `development`.
 
 ## Where a skill goes
 
 | Kind | Path | How it reaches the agent |
 |------|------|--------------------------|
-| Shared by every agent | `skills/<name>/` | `nix/skills.nix`, then Nix or Stow to `~/.agents/skills/`. Grok Bot reads it from GitHub. |
+| Shared by every agent | `skills/<name>/` | `nix/skills.nix`, then Nix or Stow to `~/.agents/skills/` and, via symlink, `~/.claude/skills/<name>/`. Grok Bot reads it from GitHub. |
 | Pi only | `pi/skills/<name>/` | Nix or Stow to `~/.pi/agent/skills/` |
 | OpenCode only | `opencode/skills/<name>/` | Nix or Stow to `~/.config/opencode/skills/` |
 | Grok Bot only | `grokbot/skills/<name>/` | Grok Bot reads it from GitHub. Leave it out of `nix/skills.nix`. |
 
-Personal and home skills (a laundry booking service, Home Assistant, and similar) belong in `grokbot/skills/` when Pi and OpenCode should not load them. Generic skills that any agent can follow belong in `skills/`.
+Personal and home skills (a laundry booking service, Home Assistant, and similar) belong in `grokbot/skills/` when Pi, OpenCode, and Claude Code should not load them. Generic skills that any agent can follow belong in `skills/`.
 
 ## Writing skills that work across agents
 
 `SKILL.md` is YAML frontmatter (`name`, `description`) plus markdown instructions, per the [Agent Skills specification](https://agentskills.io/specification).
 
-A skill under `skills/` is shared. Write it so Pi, OpenCode, and Grok Bot can each follow it with their own tools:
+A skill under `skills/` is shared. Write it so Pi, OpenCode, Claude Code, and Grok Bot can each follow it with their own tools:
 
 - State the outcome, the inputs, and when to use the skill.
 - Name the action in plain language ("search the web", "read the file", "run the tests"). Leave out tool names, slash commands, and config paths that only one agent has.
 - Keep steps that only make sense for one agent in that agent's skill directory.
+
+## Claude Code in this repository
+
+Claude Code v2.1.277 and later reads `AGENTS.md` when the working directory and its parents have no `CLAUDE.md` or `CLAUDE.local.md`. The root `CLAUDE.md` is only `@AGENTS.md`. Sessions that cannot load `AGENTS.md` directly (before that version, or with the agents-md plugin unavailable) still receive it through the import, and current Claude Code does not load it a second time. A `CLAUDE.md` that omitted the import would replace `AGENTS.md`.
 
 ## Secrets
 

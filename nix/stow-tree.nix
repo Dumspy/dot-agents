@@ -12,10 +12,13 @@
     name: self.packages.${system}.${name}
   );
 
-  # Copy a skill into the tree
+  # Copy a skill once. Claude Code reads ~/.claude/skills/<name>/SKILL.md
+  # and follows a symlinked skill directory, so the stow tree points that
+  # path at the same files. Grok Bot-only skills are not in the registry.
   copySkill = name: pkg: ''
-    mkdir -p $out/.agents/skills
+    mkdir -p $out/.agents/skills $out/.claude/skills
     cp -rL ${pkg}/share/skills/${name} $out/.agents/skills/${name}
+    ln -s ../../.agents/skills/${name} $out/.claude/skills/${name}
   '';
 
   # Copy agent definitions
@@ -117,9 +120,9 @@ in
     mkdir -p $out
 
     # grokbot/ is not an install source. Grok Bot reads grokbot/skills from
-    # GitHub. Copy only the Pi and OpenCode targets listed below.
+    # GitHub. Registry skills install for Pi, OpenCode, and Claude Code.
 
-    # Universal skills -> ~/.agents/skills/
+    # Universal skills -> ~/.agents/skills/ and ~/.claude/skills/ (symlink)
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList copySkill skillPkgs)}
 
     # Agents -> ~/.config/opencode/agents/

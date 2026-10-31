@@ -1,6 +1,6 @@
 # dot-agents Skills
 
-This directory contains universal agent skills for every supported agent: Pi, OpenCode, and Grok Bot.
+This directory contains universal agent skills for every supported agent: Pi, OpenCode, Claude Code, and Grok Bot.
 
 ## Directory Structure
 
@@ -45,7 +45,7 @@ Skill names (directory names) must:
 
 ## Writing for every agent
 
-Pi, OpenCode, and Grok Bot all follow skills in this directory. Write the instructions so each agent can run them with its own tools.
+Pi, OpenCode, Claude Code, and Grok Bot all follow skills in this directory. Write the instructions so each agent can run them with its own tools.
 
 - State the outcome, the inputs, and when to use the skill.
 - Name the action in plain language ("search the web", "read the file", "run the tests"). Leave out tool names, slash commands, and config paths that only one agent has.
@@ -67,4 +67,4 @@ This repository is public. Personal skills that contain no secrets may be commit
 
 ## Global Installation
 
-Nix and Stow install this directory to `~/.agents/skills/`, which Pi and OpenCode discover. Grok Bot reads the same files from this GitHub repository. `grokbot/skills/` is Grok Bot-only and is left out of that install.
+Nix and Stow install this directory to `~/.agents/skills/`, which Pi and OpenCode discover. Claude Code reads `~/.claude/skills/<name>/SKILL.md` and does not read `~/.agents/skills/`, so the same install symlinks each skill to `~/.claude/skills/<name>/`. Grok Bot reads the same files from this GitHub repository. `grokbot/skills/` is Grok Bot-only and is left out of that install.

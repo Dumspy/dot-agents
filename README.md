@@ -1,12 +1,12 @@
 # dot-agents
 
-Universal agent configuration for Pi, OpenCode, and Grok Bot.
+Universal agent configuration for Pi, OpenCode, Claude Code, and Grok Bot.
 
 ## What's inside
 
 | Directory | Purpose | Install target |
 |-----------|---------|----------------|
-| `skills/` | Universal skills (Pi, OpenCode, and Grok Bot) | `~/.agents/skills/` for Pi and OpenCode; Grok Bot reads the GitHub repo |
+| `skills/` | Universal skills (Pi, OpenCode, Claude Code, and Grok Bot) | `~/.agents/skills/` for Pi and OpenCode; `~/.claude/skills/<name>/` symlink for Claude Code; Grok Bot reads the GitHub repo |
 | `grokbot/skills/` | Grok Bot-only skills | Grok Bot reads the GitHub repo |
 | `opencode/agents/` | OpenCode subagent definitions | `~/.config/opencode/agents/` |
 | `pi/skills/` | Pi-specific skills | `~/.pi/agent/skills/` |
@@ -85,7 +85,8 @@ The `stow` branch is automatically updated by a GitHub Action on every push to `
 
 ```
 dot-agents/
-├── skills/           # Universal skills (Pi, OpenCode, and Grok Bot)
+├── skills/           # Universal skills (Pi, OpenCode, Claude Code, and Grok Bot)
+├── CLAUDE.md         # `@AGENTS.md`, so Claude Code loads these instructions
 ├── grokbot/
 │   └── skills/       # Grok Bot-only skills (GitHub; omitted from Nix and Stow)
 ├── pi/               # Pi-specific artifacts
@@ -436,6 +437,8 @@ Shared skills (Pi, OpenCode, and Grok Bot):
 
 Write shared skills in plain language. Name the action ("search the web", "read the file") and leave out tool names, slash commands, and config paths that only one agent has. See `skills/README.md`.
 
-Grok Bot-only skills (personal or home workflows such as laundry booking or Home Assistant) go in `grokbot/skills/<skill-name>/` with the same `SKILL.md` format. Leave them out of `nix/skills.nix`. Nix and Stow do not install that directory; Grok Bot reads it from GitHub. See `grokbot/skills/README.md`.
+Nix and Stow install each registry skill to `~/.agents/skills/<name>/` and symlink that same directory to `~/.claude/skills/<name>/`. Claude Code loads `~/.claude/skills/<name>/SKILL.md` and does not read `~/.agents/skills/`. The symlink is one copy of the skill. Other skills already in `~/.claude/skills/` are left in place.
+
+Grok Bot-only skills (personal or home workflows such as laundry booking or Home Assistant) go in `grokbot/skills/<skill-name>/` with the same `SKILL.md` format. Leave them out of `nix/skills.nix`. Nix and Stow do not install that directory for Pi, OpenCode, or Claude Code; Grok Bot reads it from GitHub. See `grokbot/skills/README.md`.
 
 This repository is public. Personal skills that contain no secrets may be committed. Never commit tokens, API keys, passwords, private keys, session cookies, or `.env` files.

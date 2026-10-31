@@ -2,14 +2,14 @@
 
 Skills in this directory are for Grok Bot only. Grok Bot reads `grokbot/skills/` and the shared `skills/` directory from this GitHub repository.
 
-Nix and Stow install Pi and OpenCode. They take universal skills from the registry in `nix/skills.nix` and agent files from `pi/` and `opencode/`. Leave this directory out of that registry. Nothing here is copied into `~/.agents/skills/` or the `stow` branch.
+Nix and Stow install Pi, OpenCode, and Claude Code. They take universal skills from the registry in `nix/skills.nix` and agent files from `pi/` and `opencode/`. Leave this directory out of that registry. Nothing here is copied into `~/.agents/skills/`, `~/.claude/skills/`, or the `stow` branch.
 
 ## When to put a skill here
 
 | Put it in | When |
 |-----------|------|
 | `grokbot/skills/<name>/` | Only Grok Bot should load it. Personal and home skills live here (laundry booking, Home Assistant, and similar). |
-| `skills/<name>/` | Pi, OpenCode, and Grok Bot should all follow it. Register it in `nix/skills.nix`. |
+| `skills/<name>/` | Pi, OpenCode, Claude Code, and Grok Bot should all follow it. Register it in `nix/skills.nix`. |
 | `pi/skills/<name>/` | Only Pi should load it. |
 | `opencode/skills/<name>/` | Only OpenCode should load it. |
 

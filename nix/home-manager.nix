@@ -362,6 +362,10 @@ in {
   config = lib.mkIf cfg.enable {
     assertions = [
       {
+        assertion = !lib.elem ".claude/skills" cfg.skillDirs;
+        message = "dot-agents: leave .claude/skills out of programs.dot-agents.skillDirs. Registry skills are symlinked there individually so other Claude skills are kept.";
+      }
+      {
         assertion = missingPiExtensions == [];
         message = "dot-agents: unknown pi extension(s) requested: ${lib.concatStringsSep ", " missingPiExtensions}. Available: ${lib.concatStringsSep ", " piExtensionNames}";
       }
@@ -394,6 +398,19 @@ in {
           })
           allSkillNames)
         cfg.skillDirs)
+      ))
+      # Claude Code discovers ~/.claude/skills/<name>/SKILL.md, not
+      # ~/.agents/skills. Symlink each registry skill at the bundle entry
+      # (itself a link to the skill package) so the source is not copied
+      # again. home.file tracks these links and leaves other skills in
+      # ~/.claude/skills in place. grokbot skills are not in the registry.
+      # Keep .claude/skills out of skillDirs: that option rsyncs --delete.
+      (lib.mkIf (allSkillNames != []) (
+        lib.listToAttrs (map (name: {
+            name = ".claude/skills/${name}";
+            value.source = "${skillsBundle}/${name}";
+          })
+          allSkillNames)
       ))
       # Universal agents (link mode only)
       (lib.mkIf (cfg.structure == "link" && agentNames != []) (
