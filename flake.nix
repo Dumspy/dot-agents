@@ -1,5 +1,5 @@
 {
-  description = "Universal agent configuration: skills, agents, commands, and extensions for Pi, OpenCode, and future agents.";
+  description = "Universal agent configuration: skills, agents, commands, and extensions for Pi, OpenCode, and Grok Bot.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

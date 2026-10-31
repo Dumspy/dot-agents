@@ -1,12 +1,13 @@
 # dot-agents
 
-Universal agent configuration for Pi, OpenCode, and future AI coding agents.
+Universal agent configuration for Pi, OpenCode, and Grok Bot.
 
 ## What's inside
 
 | Directory | Purpose | Install target |
 |-----------|---------|----------------|
-| `skills/` | Universal skills (all agents) | `~/.agents/skills/` |
+| `skills/` | Universal skills (Pi, OpenCode, and Grok Bot) | `~/.agents/skills/` for Pi and OpenCode; Grok Bot reads the GitHub repo |
+| `grokbot/skills/` | Grok Bot-only skills | Grok Bot reads the GitHub repo |
 | `opencode/agents/` | OpenCode subagent definitions | `~/.config/opencode/agents/` |
 | `pi/skills/` | Pi-specific skills | `~/.pi/agent/skills/` |
 | `pi/extensions/` | Pi TypeScript extensions | `~/.pi/agent/extensions/` |
@@ -84,7 +85,9 @@ The `stow` branch is automatically updated by a GitHub Action on every push to `
 
 ```
 dot-agents/
-├── skills/           # Universal skills (all agents discover these)
+├── skills/           # Universal skills (Pi, OpenCode, and Grok Bot)
+├── grokbot/
+│   └── skills/       # Grok Bot-only skills (GitHub; omitted from Nix and Stow)
 ├── pi/               # Pi-specific artifacts
 │   ├── skills/
 │   ├── extensions/
@@ -424,7 +427,15 @@ If `replace` is omitted, the matched text is replaced with asterisks (`*`).
 
 ## Adding Skills
 
+Shared skills (Pi, OpenCode, and Grok Bot):
+
 1. Create a directory under `skills/<skill-name>/`
 2. Add a `SKILL.md` with proper YAML frontmatter
 3. Register the skill in `nix/skills.nix`
 4. Rebuild or push to trigger the `stow` branch update
+
+Write shared skills in plain language. Name the action ("search the web", "read the file") and leave out tool names, slash commands, and config paths that only one agent has. See `skills/README.md`.
+
+Grok Bot-only skills (personal or home workflows such as laundry booking or Home Assistant) go in `grokbot/skills/<skill-name>/` with the same `SKILL.md` format. Leave them out of `nix/skills.nix`. Nix and Stow do not install that directory; Grok Bot reads it from GitHub. See `grokbot/skills/README.md`.
+
+This repository is public. Personal skills that contain no secrets may be committed. Never commit tokens, API keys, passwords, private keys, session cookies, or `.env` files.

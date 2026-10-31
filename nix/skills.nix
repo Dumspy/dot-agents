@@ -15,7 +15,9 @@
   };
 in {
   # --- Local skills ---
-  # Paths are relative to nix/skills.nix, so ../skills/ points to repo root skills/
+  # Paths are relative to nix/skills.nix, so ../skills/ points to repo root skills/.
+  # Grok Bot-only skills live in ../grokbot/skills. Leave them out of this
+  # registry so Nix and the stow branch do not install them for Pi/OpenCode.
   init-deep = local ../skills/init-deep;
   "grill-me" = local ../skills/grill-me;
 

@@ -116,6 +116,9 @@ in
   } ''
     mkdir -p $out
 
+    # grokbot/ is not an install source. Grok Bot reads grokbot/skills from
+    # GitHub. Copy only the Pi and OpenCode targets listed below.
+
     # Universal skills -> ~/.agents/skills/
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList copySkill skillPkgs)}
 

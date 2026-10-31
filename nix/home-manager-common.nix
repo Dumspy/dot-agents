@@ -18,7 +18,9 @@
         definition is symlinked as `<dir>/<skill>/`. One entry per agent
         harness that should discover the skills.
 
-        Default is `.agents/skills/` which both Pi and OpenCode support.
+        Default is `.agents/skills/`, which Pi and OpenCode discover.
+        Grok Bot reads `skills/` and `grokbot/skills/` from the Git
+        repository and has no install directory in this module.
       '';
     };
 

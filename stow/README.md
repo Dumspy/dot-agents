@@ -40,6 +40,8 @@ The tree mirrors the target paths under `$HOME`:
 .pi/agent/               -> ~/.pi/agent/
 ```
 
+Grok Bot skills live in `grokbot/skills/` on the `development` branch. This tree leaves that directory out. Grok Bot reads it from GitHub.
+
 External Pi extensions (see `nix/pi-external-extensions.nix` for the registry —
 currently empty) are installed automatically by
 `setup.sh` if the `pi` CLI is available. See `nix/pi-external-extensions.nix`
