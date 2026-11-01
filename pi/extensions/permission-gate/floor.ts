@@ -1,5 +1,5 @@
 /**
- * Judge Gate — deterministic hard floor.
+ * Permission Gate — deterministic hard floor.
  *
  * Tiny, non-configurable, in code. A floor hit blocks finally: no prompt, no
  * session override, no judge call. Override only via `/allow` (one-shot,
@@ -87,11 +87,13 @@ const BASH_SHAPES: readonly BashShape[] = [
 		// to the chat provider via tool results. No network needed.
 		reason: "secret-dump",
 		detail: "Dumping secrets or the environment into output is never done autonomously. Inspect them yourself.",
+		// Segment-anchored: a path operand that merely says `.env` is not a
+		// dump (`find . -name ".env" | head` must stay free).
 		match: (c) =>
-			/\b(env|printenv|set)\b[^|;&]*\|\s*(grep|rg|cat|less|more|head|tail|awk|sed|tee|sort|uniq|cut|tr|wc)\b/.test(c) ||
-			/^\s*(env|printenv)\s*$/.test(c) ||
+			/^\s*(env|printenv)\s*(\||$)/.test(c) ||
+			/^\s*(env|printenv)\s+-[^|;&]*\|/.test(c) ||
 			/^\s*set\s*$/.test(c) ||
-			/\becho\b[^|;&]*\$[A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)\b/i.test(c),
+			/^\s*echo\b[^|;&]*\$[A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)\b/i.test(c),
 	},
 ];
 
@@ -165,6 +167,23 @@ function isCredentialPath(path: string): boolean {
 		// provider — block, don't judge. Same for Trust-on-read exec files.
 		path.includes("/secrets/") ||
 		path.endsWith("/secrets") ||
+		// Auth files are credential stores even when they are not named like
+		// keys: each one holds live tokens for a provider or registry.
+		path.endsWith("/.pi/agent/auth.json") ||
+		path.endsWith("/.netrc") ||
+		path.includes("/.npmrc") ||
+		path.endsWith("/.npmrc") ||
+		path.endsWith("/.pypirc") ||
+		path.includes("/.config/gh/hosts.yml") ||
+		path.includes("/.docker/config.json") ||
+		path.includes("/.config/gcloud/") ||
+		path.endsWith("/.config/gcloud") ||
+		path.includes("/.azure/") ||
+		path.endsWith("/.azure") ||
+		path.includes("/.terraform.d/") ||
+		path.endsWith("/.terraform.d") ||
+		path.includes("/.password-store/") ||
+		path.endsWith("/.password-store") ||
 		lower.endsWith(".envrc") ||
 		/\.p(e)?m$/.test(path) ||
 		/\.key$/i.test(path) ||
@@ -177,7 +196,11 @@ function isGitInternalPath(path: string): boolean {
 	return path.includes("/.git/") || path.endsWith("/.git");
 }
 
+/** Template files hold placeholders, not secrets; writing them is normal work. */
+const ENV_TEMPLATES = /\.env\.(example|sample|template|dist|defaults)$/i;
+
 function isEnvFile(path: string): boolean {
+	if (ENV_TEMPLATES.test(path)) return false;
 	return /(^|\/)\.env[^/]*$/.test(path);
 }
 

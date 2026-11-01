@@ -1,5 +1,5 @@
 /**
- * Judge Gate — blocked-call ring buffer + one-shot pending approval.
+ * PERMISSION Gate — blocked-call ring buffer + one-shot pending approval.
  *
  * `/allow` shows the 3 most recent blocks; picking one stores a single
  * pending approval consumed by the first matching tool call (then gone).
@@ -7,7 +7,7 @@
  * `/allow` selection.
  */
 
-export type BlockKind = "floor" | "judge";
+export type BlockKind = "floor" | "review";
 
 export interface BlockedCall {
 	readonly tool: string;
@@ -70,7 +70,7 @@ export class PendingApproval {
 }
 
 export function describeBlocked(call: BlockedCall): string {
-	const source = call.kind === "floor" ? "floor" : "judge";
+	const source = call.kind === "floor" ? "floor" : "review";
 	return `[${source}] ${call.tool} ${truncateOneLine(call.value)} — ${call.reason}`;
 }
 

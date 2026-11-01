@@ -137,3 +137,30 @@ describe("checkPathFloor", () => {
 		expect(checkFloor("unknown-tool", "whatever")).toBeNull();
 	});
 });
+
+describe("secret-dump is segment-anchored", () => {
+	it("blocks a real environment dump", () => {
+		expect(checkFloor("bash", "env")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "env | sort | grep PI_")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "echo hi; printenv | grep KEY")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "echo $API_TOKEN")?.reason).toBe("secret-dump");
+	});
+
+	it("does not fire on a path that merely names .env", () => {
+		expect(checkFloor("bash", 'find . -maxdepth 3 -name ".env" | head')).toBeNull();
+		expect(checkFloor("bash", 'printf "\\n--- env ---\\n"; ls .env.example')).toBeNull();
+	});
+});
+
+describe("env templates", () => {
+	it("allows writing a template that holds placeholders", () => {
+		for (const path of [".env.example", ".env.sample", ".env.template", ".env.dist"]) {
+			expect(checkFloor("write", `/work/app/${path}`)).toBeNull();
+		}
+	});
+
+	it("still blocks writing a real env file", () => {
+		expect(checkFloor("write", "/work/app/.env")?.reason).toBe("env-write");
+		expect(checkFloor("write", "/work/app/.env.local")?.reason).toBe("env-write");
+	});
+});
