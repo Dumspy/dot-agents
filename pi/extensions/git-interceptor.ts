@@ -14,7 +14,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-/** Must match the prefix stripped by the judge-gate floor (floor.ts). */
+/** Must match GIT_ENV_PREFIX in permission-gate/floor.ts, which both the floor and the planner strip. */
 const GIT_ENV_PREFIX = "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\n";
 
 const NO_VERIFY_RE = /--no-verify\b/;

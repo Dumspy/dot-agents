@@ -63,6 +63,7 @@ export function buildReviewEvidence(
 	target: ReviewTarget,
 	intent: IntentContext | null,
 	facts: EnvironmentFacts,
+	trustedProject: boolean,
 ): ReviewEvidence {
 	const redacted = redactSecrets(target.value);
 	const boundedValue = truncate(redacted, MAX_ACTION_CHARS);
@@ -85,7 +86,7 @@ export function buildReviewEvidence(
 		review_context_kind: contextual ? "contextual" : "action_only",
 		review_origin: target.parentToolCallId === undefined ? "agent" : "subagent",
 		target_tool_call_id: target.toolCallId ?? "",
-		environment: { facts: describeEnvironment(facts, target.cwd) },
+		environment: { facts: describeEnvironment(facts, target.cwd, trustedProject) },
 		untrusted_action: {
 			tool: target.toolName,
 			value: boundedValue,

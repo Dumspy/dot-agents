@@ -28,7 +28,7 @@ const facts = {
 describe("buildReviewEvidence", () => {
 	it("carries trusted intent when it exists", () => {
 		const intent = buildIntentContext(["clean up the build dir", "now remove build"]);
-		const evidence = buildReviewEvidence(target, intent, facts);
+		const evidence = buildReviewEvidence(target, intent, facts, true);
 		expect(evidence.state["review_context_kind"]).toBe("contextual");
 		const trusted = evidence.state["trusted_user_intent"] as Record<string, unknown>;
 		expect(trusted["current_request"]).toBe("now remove build");
@@ -36,21 +36,21 @@ describe("buildReviewEvidence", () => {
 	});
 
 	it("says action_only when no user turn is readable", () => {
-		const evidence = buildReviewEvidence(target, null, EMPTY_FACTS);
+		const evidence = buildReviewEvidence(target, null, EMPTY_FACTS, true);
 		expect(evidence.state["review_context_kind"]).toBe("action_only");
 		expect(evidence.state["trusted_user_intent"]).toBeUndefined();
 		expect(evidence.intentText).toBe("");
 	});
 
 	it("sends environment facts, not guesses", () => {
-		const evidence = buildReviewEvidence(target, null, facts);
+		const evidence = buildReviewEvidence(target, null, facts, true);
 		const environment = evidence.state["environment"] as Record<string, string[]>;
 		expect(environment["facts"]!.join("\n")).toContain("Trusted repository: /work/app");
 		expect(environment["facts"]!.join("\n")).toContain("Current branch: main");
 	});
 
 	it("marks the action untrusted and records origin", () => {
-		const evidence = buildReviewEvidence({ ...target, parentToolCallId: "call_0" }, null, facts);
+		const evidence = buildReviewEvidence({ ...target, parentToolCallId: "call_0" }, null, facts, true);
 		expect(evidence.state["review_origin"]).toBe("subagent");
 		expect(evidence.state["untrusted_action"]).toMatchObject({ tool: "bash", value: "rm -rf build" });
 		expect(evidence.state["target_tool_call_id"]).toBe("call_1");
@@ -68,7 +68,7 @@ describe("buildReviewEvidence", () => {
 	});
 
 	it("truncates long actions and flags incomplete evidence", () => {
-		const evidence = buildReviewEvidence({ ...target, value: "x".repeat(MAX_ACTION_CHARS * 2) }, null, facts);
+		const evidence = buildReviewEvidence({ ...target, value: "x".repeat(MAX_ACTION_CHARS * 2) }, null, facts, true);
 		expect(evidence.incomplete).toBe(true);
 		expect(evidence.state["action_evidence_incomplete"]).toBe(true);
 	});
@@ -122,7 +122,7 @@ describe("runReview", () => {
 			exfiltration: { probabilities: { violation: 0.81 } },
 			external_effect: { probabilities: { violation: 0.05 } },
 		});
-		const evidence = buildReviewEvidence(target, null, facts);
+		const evidence = buildReviewEvidence(target, null, facts, true);
 		const outcome = await runReview(registry, ref, evidence, ["injection", "exfiltration", "external_effect"], {
 			timeoutMs: 1000,
 		});
@@ -139,7 +139,7 @@ describe("runReview", () => {
 			injection: { probabilities: { violation: 0.1 }, confidence: 0.4 },
 			exfiltration: { probabilities: { violation: 0.1 }, confidence: 0.9 },
 		});
-		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts), ["injection", "exfiltration"], {
+		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts, true), ["injection", "exfiltration"], {
 			timeoutMs: 1000,
 		});
 		if (outcome.status !== "reviewed") throw new Error("expected reviewed");
@@ -148,7 +148,7 @@ describe("runReview", () => {
 
 	it("degrades when the model is not configured", async () => {
 		const { registry } = fakeRegistry("missing", {});
-		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts), ["injection"], {
+		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts, true), ["injection"], {
 			timeoutMs: 1000,
 		});
 		expect(outcome.status).toBe("unavailable");
@@ -158,7 +158,7 @@ describe("runReview", () => {
 
 	it("degrades on transport failure", async () => {
 		const { registry } = fakeRegistry("error", {});
-		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts), ["injection"], {
+		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts, true), ["injection"], {
 			timeoutMs: 1000,
 		});
 		if (outcome.status !== "unavailable") throw new Error("expected unavailable");
@@ -167,7 +167,7 @@ describe("runReview", () => {
 
 	it("degrades when an answer is missing", async () => {
 		const { registry } = fakeRegistry("malformed", {});
-		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts), ["injection", "exfiltration"], {
+		const outcome = await runReview(registry, ref, buildReviewEvidence(target, null, facts, true), ["injection", "exfiltration"], {
 			timeoutMs: 1000,
 		});
 		if (outcome.status !== "unavailable") throw new Error("expected unavailable");

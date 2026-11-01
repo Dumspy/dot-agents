@@ -1,4 +1,4 @@
-# Example Home Manager module for the judge gate
+# Example Home Manager module for the permission gate
 # Add this to your home.nix or import it alongside opencode.nix
 {
   config,
@@ -13,20 +13,21 @@
       # Set to [] to disable, or a specific list to cherry-pick
       extensions = null;
 
-      # Static judge-gate config → ~/.pi/agent/judge.json.
-      # Nix owns the slow-moving config only; model switching and
-      # threshold tuning happen at runtime via /judge TUI commands.
-      judge = {
+      # Static permission-gate config → ~/.pi/agent/gate.json.
+      # Nix owns the slow-moving config only; thresholds are replayed from
+      # the decision log before they are changed here.
+      gate = {
         provider = "typesafe";
         model = "jev-latest";
-        t = 0.85;
-        c = 0.7;
+        allowAt = 0.25;
+        denyAt = 0.6;
         timeoutMs = 4000;
+        onUncertain = "hold";
         profiles = {
-          # Clef-flash hedges: runs prompt-first on relaxed thresholds.
+          # Clef-flash hedges on every question, so it needs a tighter band.
           "cloudflare/clef-flash" = {
-            t = 0.7;
-            c = 0.4;
+            allowAt = 0.2;
+            denyAt = 0.5;
           };
         };
       };

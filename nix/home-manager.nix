@@ -130,8 +130,8 @@
         overlayExtensionNames}
     '';
 
-  # Generate judge.json (static judge-gate config) from Nix config
-  judgeJson = pkgs.writeText "pi-judge.json" (builtins.toJSON cfg.pi.judge);
+  # Generate gate.json (static permission-gate config) from Nix config
+  gateJson = pkgs.writeText "pi-gate.json" (builtins.toJSON cfg.pi.gate);
 
   # Generate keybindings.json from Nix config
   keybindingsJson = pkgs.writeText "pi-keybindings.json" (builtins.toJSON cfg.pi.keybindings);
@@ -234,7 +234,7 @@ in {
         '';
       };
 
-      judge = lib.mkOption {
+      gate = lib.mkOption {
         type = lib.types.nullOr (lib.types.submodule {
           options = {
             provider = lib.mkOption {
@@ -247,46 +247,54 @@ in {
               default = "jev-latest";
               description = "Classifier model id within the provider.";
             };
-            t = lib.mkOption {
+            allowAt = lib.mkOption {
               type = lib.types.float;
-              default = 0.85;
-              description = "Probability required to count a call as safe (0.5 < t <= 1).";
+              default = 0.25;
+              description = "Violation probability at or below which an action is allowed (0 <= allowAt < denyAt).";
             };
-            c = lib.mkOption {
+            denyAt = lib.mkOption {
               type = lib.types.float;
-              default = 0.7;
-              description = "Minimum model confidence to act without prompting (0 <= c <= 1).";
+              default = 0.6;
+              description = "Violation probability at or above which an action is blocked (allowAt < denyAt <= 1).";
+            };
+            onUncertain = lib.mkOption {
+              type = lib.types.enum ["hold" "ask"];
+              default = "hold";
+              description = ''
+                What a mid-band review does: "hold" refuses the call and gives the
+                agent guidance; "ask" opens a permission prompt.
+              '';
             };
             timeoutMs = lib.mkOption {
               type = lib.types.int;
               default = 4000;
-              description = "Per-attempt judge request timeout in milliseconds.";
+              description = "Per-attempt reviewer request timeout in milliseconds.";
             };
             profiles = lib.mkOption {
               type = lib.types.attrsOf (lib.types.submodule {
                 options = {
-                  t = lib.mkOption {
+                  allowAt = lib.mkOption {
                     type = lib.types.float;
-                    description = "Threshold t for this model.";
+                    description = "allowAt for this model.";
                   };
-                  c = lib.mkOption {
+                  denyAt = lib.mkOption {
                     type = lib.types.float;
-                    description = "Threshold c for this model.";
+                    description = "denyAt for this model.";
                   };
                 };
               });
               default = {};
               description = ''
                 Per-model threshold profiles, keyed by "provider/model".
-                Switching models loads the matching profile (or the top-level t/c).
+                Switching models loads the matching profile (or the top-level pair).
               '';
             };
           };
         });
         default = null;
         description = ''
-          Static judge-gate config, written to ~/.pi/agent/judge.json.
-          Null (default) leaves any existing judge.json unmanaged.
+          Static permission-gate config, written to ~/.pi/agent/gate.json.
+          Null (default) leaves any existing gate.json unmanaged.
           Model selection and threshold tuning at runtime happen via TUI
           commands, not here — Nix owns the slow-moving static config only.
 
@@ -294,8 +302,8 @@ in {
           {
             provider = "typesafe";
             model = "jev-latest";
-            t = 0.85;
-            c = 0.7;
+            allowAt = 0.25;
+            denyAt = 0.6;
           }
         '';
       };
@@ -445,7 +453,7 @@ in {
       })
       # Judge gate static config
       (lib.mkIf (cfg.pi.judge != null) {
-        ".pi/agent/judge.json".source = judgeJson;
+        ".pi/agent/gate.json".source = gateJson;
       })
       # Pi keybindings
       (lib.mkIf (cfg.pi.keybindings != {}) {

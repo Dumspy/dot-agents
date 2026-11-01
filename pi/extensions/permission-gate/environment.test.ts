@@ -15,23 +15,28 @@ describe("normalizeRemote", () => {
 
 describe("describeEnvironment", () => {
 	it("always states the working directory", () => {
-		expect(describeEnvironment(EMPTY_FACTS, "/work")).toContain("Working directory: /work");
+		expect(describeEnvironment(EMPTY_FACTS, "/work", true)).toContain("Working directory: /work");
 	});
 
 	it("says when the folder is not a repository", () => {
-		const lines = describeEnvironment(EMPTY_FACTS, "/tmp");
+		const lines = describeEnvironment(EMPTY_FACTS, "/tmp", false);
 		expect(lines).toContain("Source control: not a git repository");
 	});
 
 	it("reports the trusted boundary, remotes, and branch", () => {
 		const lines = describeEnvironment(
-			{ repoRoot: "/work/app", remotes: ["github.com/acme/app"], branch: "main", registries: [], trustedProject: true },
+			{ repoRoot: "/work/app", remotes: ["github.com/acme/app"], branch: "main" },
 			"/work/app/src",
+			true,
 		);
 		expect(lines).toContain("Trusted repository: /work/app");
 		expect(lines).toContain("Source control: github.com/acme/app");
 		expect(lines).toContain("Current branch: main");
 		expect(lines.join("\n")).toContain("trusted");
+	});
+
+	it("says so when the project is not trusted", () => {
+		expect(describeEnvironment(EMPTY_FACTS, "/tmp", false).join("\n")).toContain("NOT trusted");
 	});
 });
 

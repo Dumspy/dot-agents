@@ -319,7 +319,8 @@ export default function permissionGate(pi: ExtensionAPI) {
 				...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
 			},
 			readIntent(ctx),
-			readEnvironmentFacts(ctx.cwd, ctx.isProjectTrusted?.() ?? true),
+			readEnvironmentFacts(ctx.cwd),
+			ctx.isProjectTrusted?.() ?? true,
 		);
 		const review: ReviewOutcome = await runReview(ctx.modelRegistry, config, evidence, questionsForTool(toolName), {
 			signal: ctx.signal,

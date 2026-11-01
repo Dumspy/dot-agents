@@ -259,3 +259,30 @@ describe("pathNeedsReview covers writes as well as reads", () => {
 		expect(pathNeedsReview("/Users/u/proj/src/a.ts", "/Users/u/proj")).toBe(false);
 	});
 });
+
+describe("floor: newline-separated commands", () => {
+	it("sees a hazard on its own line", () => {
+		expect(checkFloor("bash", "echo hi\nsudo rm -rf /")?.reason).toBe("sudo");
+		expect(checkFloor("bash", "ls -la\nrm -rf build")?.reason).toBe("recursive-delete");
+	});
+});
+
+describe("floor: shell env reads", () => {
+	it("blocks reading an env file through the shell", () => {
+		for (const command of ["cat .env", "cat src/.env", "grep -r KEY .env", "head -n 5 .env.local", "less .env.production", "cat .envrc"]) {
+			expect(checkFloor("bash", command)?.reason, command).toBe("env-read");
+		}
+	});
+
+	it("leaves templates and other files to the planner", () => {
+		expect(checkFloor("bash", "cat .env.example")).toBeNull();
+		expect(checkFloor("bash", "cat README.md")).toBeNull();
+	});
+});
+
+describe("floor: export", () => {
+	it("blocks a bare export but not an assignment", () => {
+		expect(checkFloor("bash", "export")?.reason).toBe("secret-dump");
+		expect(checkFloor("bash", "export FOO=1")).toBeNull();
+	});
+});

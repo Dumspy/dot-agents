@@ -31,13 +31,16 @@ export interface FloorHit {
  */
 const GIT_ENV_PREFIX = "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\n";
 
-function stripGitEnvPrefix(command: string): string {
+export function stripGitEnvPrefix(command: string): string {
 	return command.startsWith(GIT_ENV_PREFIX) ? command.slice(GIT_ENV_PREFIX.length) : command;
 }
 
-/** Split on sequencing operators; a single pipe is one segment. */
+/** Split on sequencing operators and newlines; a single pipe is one segment. */
 function sequenceSegments(command: string): string[] {
-	return command.split(/;|&&|\|\|/).map((seg) => seg.trim()).filter((seg) => seg.length > 0);
+	return command
+		.split(/;|&&|\|\||\n/)
+		.map((seg) => seg.trim())
+		.filter((seg) => seg.length > 0);
 }
 
 /**
@@ -68,6 +71,9 @@ interface BashShape {
 	readonly detail: string;
 	readonly match: (command: string) => boolean;
 }
+
+/** Commands that would print an env file's contents into the transcript. */
+const SHELL_READERS = new Set(["cat", "grep", "rg", "head", "tail", "less", "more", "awk", "sed", "cut", "sort", "uniq", "nl", "strings", "xxd", "od"]);
 
 const BASH_SHAPES: readonly BashShape[] = [
 	{
@@ -111,6 +117,20 @@ const BASH_SHAPES: readonly BashShape[] = [
 		reason: "remote-code-execution",
 		detail: "Downloading code and piping it to a shell is never done autonomously. Inspect it and run it yourself.",
 		match: (c) => /\b(curl|wget)\b[\s\S]*\|\s*(sudo\s+)?(sh|bash|zsh|fish|dash)\b/.test(c),
+	},
+	{
+		// `cat .env` is the shell form of reading secrets: no masking applies,
+		// so the values land in the transcript.
+		reason: "env-read",
+		detail: "Reading an environment file through the shell is never done autonomously. Read it yourself.",
+		match: (c) => {
+			const words = c.split(/\s+/);
+			const reader = words[0];
+			if (reader === undefined || !SHELL_READERS.has(reader)) return false;
+			return words.slice(1).some(
+				(word) => /^["']?(\.?\/)?[^"'\s]*(\.env(\.[\w-]+)?|\.envrc)["']?$/.test(word) && !ENV_TEMPLATES.test(word),
+			);
+		},
 	},
 	{
 		// Env dumps exfiltrate through tool results; no network needed.

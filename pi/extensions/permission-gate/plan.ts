@@ -12,7 +12,7 @@
 
 import { homedir } from "node:os";
 import { isAbsolute, resolve as resolvePath } from "node:path";
-import { checkPathFloor } from "./floor.js";
+import { checkPathFloor, stripGitEnvPrefix } from "./floor.js";
 
 export type PlanRefusal =
 	| "empty_command"
@@ -168,6 +168,15 @@ export function splitSegments(command: string): string[] {
 			throw new ShellShapeError("expansion");
 		}
 		if (ch === "<" || ch === ">") throw new ShellShapeError("redirection");
+		// A newline is a command separator in `sh -c`; treating it as whitespace
+		// let `echo hi` on one line and `sudo rm -rf /` on the next plan as one
+		// read-only command.
+		if (ch === "\n" || ch === "\r") {
+			segments.push(current);
+			current = "";
+			i += 1;
+			continue;
+		}
 		if (ch === ";" || ch === "|" || ch === "&") {
 			segments.push(current);
 			current = "";
@@ -317,7 +326,9 @@ function resolveOperand(word: string, scope: PlanScope): string | null {
 	const expanded = word === "~" ? homedir() : word.startsWith("~/") ? resolvePath(homedir(), word.slice(2)) : word;
 	const absolute = isAbsolute(expanded) ? resolvePath(expanded) : resolvePath(scope.cwd, expanded);
 	if (!scope.roots.some((root) => withinRoot(absolute, root))) return null;
-	if (checkPathFloor(absolute, false) !== null) return null;
+	// Write-mode floor rules: a bash read has no output mask, so an `.env` path
+	// reaches the chat provider verbatim where the read tool would redact it.
+	if (checkPathFloor(absolute, true) !== null) return null;
 	return absolute;
 }
 
@@ -569,6 +580,15 @@ function planStage(words: Token[], scope: PlanScope): StagePlan {
 	if (NETWORK.has(command)) return "network_access";
 	if (PROCESS_OR_SYSTEM.has(command)) return "process_or_system";
 
+	// `export A=1 B=2` only sets variables for this shell; a bare `export`
+	// prints the environment and is the floor's business.
+	if (command === "export" || command === "declare") {
+		const assignments = words.slice(1);
+		const onlyAssignments =
+			assignments.length > 0 && assignments.every((word) => /^[A-Za-z_][A-Za-z0-9_]*=|^-[a-z]+$/.test(word.value));
+		return onlyAssignments ? { executable: "builtin:export", argv: [command, ...assignments.map((w) => w.value)] } : "unsupported_argument";
+	}
+
 	if (command === "git") return planGit(words, scope);
 	if (command === "find") return planFind(words, scope);
 	if (command === "printf") return planPrintf(words);
@@ -634,7 +654,9 @@ function planGit(words: Token[], scope: PlanScope): StagePlan {
 /** Plan a shell command. `read_only` means every stage is a canonicalized
  * read-only invocation whose path operands are inside the allowed roots. */
 export function planCommand(command: string, options: PlanOptions = {}): Plan {
-	const trimmed = command.trim();
+	// git-interceptor prefixes every git call with its editor-neutralizing
+	// exports; the floor already ignores that prefix, so the planner must too.
+	const trimmed = stripGitEnvPrefix(command).trim();
 	if (trimmed.length === 0) return { kind: "review", reason: "empty_command" };
 	if (trimmed.length > MAX_COMMAND_BYTES) return { kind: "review", reason: "too_long" };
 

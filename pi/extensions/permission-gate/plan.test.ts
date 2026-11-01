@@ -178,3 +178,45 @@ describe("planner: canonicalization", () => {
 		]);
 	});
 });
+
+describe("planner: a newline ends a command", () => {
+	it("refuses a mutating second line after a read-only first line", () => {
+		expect(reason("echo hi\nsudo rm -rf /")).not.toBe("read_only");
+		expect(reason("ls -la\nrm -rf build")).not.toBe("read_only");
+		expect(reason("cat README.md\ngit push --force")).not.toBe("read_only");
+	});
+
+	it("still plans two read-only lines", () => {
+		expect(reason("ls -la\ncat README.md")).toBe("read_only");
+	});
+});
+
+describe("planner: env files are never free", () => {
+	it("refuses an env read, which bash cannot mask", () => {
+		expect(reason("cat .env")).toBe("unsupported_argument");
+		expect(reason("grep -r KEY .env")).toBe("unsupported_argument");
+		expect(reason("head -n 5 config/.env.local")).toBe("unsupported_argument");
+	});
+
+	it("leaves templates alone", () => {
+		expect(reason("cat .env.example")).toBe("read_only");
+	});
+});
+
+describe("planner: git-interceptor prefix", () => {
+	const prefix = "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true GIT_MERGE_AUTOEDIT=no\n";
+
+	it("plans intercepted git reads instead of sending them to review", () => {
+		expect(reason(prefix + "git status --short")).toBe("read_only");
+		expect(reason(prefix + "git diff --stat")).toBe("read_only");
+	});
+
+	it("does not let the prefix launder a write", () => {
+		expect(reason(prefix + "git commit -m x")).toBe("command_owned_input");
+	});
+
+	it("plans plain exports but not a bare one", () => {
+		expect(reason("export FOO=1 BAR=2")).toBe("read_only");
+		expect(reason("export")).not.toBe("read_only");
+	});
+});
