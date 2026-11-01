@@ -21,8 +21,6 @@ export interface EnvironmentFacts {
 	readonly remotes: readonly string[];
 	/** Checked-out branch, or null for a detached HEAD. */
 	readonly branch: string | null;
-	/** Package registries the project is configured to publish to. */
-	readonly registries: readonly string[];
 	/** Whether the working directory is inside a trusted (user-opened) project. */
 	readonly trustedProject: boolean;
 }
@@ -31,7 +29,6 @@ export const EMPTY_FACTS: EnvironmentFacts = {
 	repoRoot: null,
 	remotes: [],
 	branch: null,
-	registries: [],
 	trustedProject: false,
 };
 
@@ -64,23 +61,6 @@ export function normalizeRemote(url: string): string {
 	return rest;
 }
 
-function readRegistries(cwd: string): string[] {
-	const out: string[] = [];
-	try {
-		const raw = execFileSync("sh", ["-c", "cat .npmrc 2>/dev/null || true"], {
-			cwd,
-			encoding: "utf8",
-			timeout: GIT_TIMEOUT_MS,
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		for (const line of raw.split("\n")) {
-			const match = line.match(/^registry\s*=\s*(\S+)/);
-			if (match) out.push(normalizeRemote(match[1]!));
-		}
-	} catch {}
-	return out;
-}
-
 const cache = new Map<string, EnvironmentFacts>();
 
 /** Read environment facts for `cwd`. Cached; call `clearEnvironmentCache` on session start. */
@@ -103,7 +83,6 @@ export function readEnvironmentFacts(cwd: string, trustedProject = true): Enviro
 		repoRoot,
 		remotes: [...new Set(remotes)].slice(0, 8),
 		branch: branch === "HEAD" ? null : branch,
-		registries: repoRoot === null ? [] : readRegistries(repoRoot).slice(0, 4),
 		trustedProject,
 	};
 	cache.set(cwd, facts);
@@ -121,7 +100,6 @@ export function describeEnvironment(facts: EnvironmentFacts, cwd: string): strin
 	if (facts.repoRoot !== null) lines.push(`Trusted repository: ${facts.repoRoot}`);
 	if (facts.remotes.length > 0) lines.push(`Source control: ${facts.remotes.join(", ")}`);
 	if (facts.branch !== null) lines.push(`Current branch: ${facts.branch}`);
-	if (facts.registries.length > 0) lines.push(`Internal package registry: ${facts.registries.join(", ")}`);
 	if (facts.repoRoot === null) lines.push("Source control: not a git repository");
 	return lines;
 }

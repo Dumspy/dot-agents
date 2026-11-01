@@ -144,15 +144,15 @@ export async function runReview(
 	options: { signal?: AbortSignal; timeoutMs: number },
 ): Promise<ReviewOutcome> {
 	const started = Date.now();
+	const fail = (reason: string, detail: string): ReviewOutcome => ({
+		status: "unavailable",
+		reason,
+		detail,
+		latencyMs: Date.now() - started,
+	});
+
 	const model = registry.findOfType("classifier", ref.provider, ref.model);
-	if (!model) {
-		return {
-			status: "unavailable",
-			reason: "unknown-model",
-			detail: `Review model not available: ${modelKey(ref)}. Check provider auth.`,
-			latencyMs: Date.now() - started,
-		};
-	}
+	if (!model) return fail("unknown-model", `Review model not available: ${modelKey(ref)}. Check provider auth.`);
 
 	const questions = buildQuestions(questionIds);
 	const context: ClassifierContext = { state: evidence.state, questions };
@@ -164,47 +164,21 @@ export async function runReview(
 			timeoutMs: options.timeoutMs,
 		});
 	} catch (error) {
-		return {
-			status: "unavailable",
-			reason: "error",
-			detail: `Review request failed: ${error instanceof Error ? error.message : String(error)}`,
-			latencyMs: Date.now() - started,
-		};
+		return fail("error", `Review request failed: ${error instanceof Error ? error.message : String(error)}`);
 	}
 	const latencyMs = Date.now() - started;
 
-	if (result.stopReason === "aborted") {
-		return { status: "unavailable", reason: "aborted", detail: "Review request aborted.", latencyMs };
-	}
-	if (result.stopReason !== "stop") {
-		return {
-			status: "unavailable",
-			reason: "error",
-			detail: `Review error: ${result.errorMessage ?? "unknown"}`,
-			latencyMs,
-		};
-	}
+	if (result.stopReason === "aborted") return fail("aborted", "Review request aborted.");
+	if (result.stopReason !== "stop") return fail("error", `Review error: ${result.errorMessage ?? "unknown"}`);
 
 	const probabilities: Record<string, number> = {};
 	let confidence = 1;
 	for (const id of Object.keys(questions)) {
 		const answer = result.answers[id];
-		if (!answer || answer.type !== "choice") {
-			return {
-				status: "unavailable",
-				reason: "malformed",
-				detail: `Review response missing the "${id}" answer.`,
-				latencyMs,
-			};
-		}
+		if (!answer || answer.type !== "choice") return fail("malformed", `Review response missing the "${id}" answer.`);
 		const p = answer.probabilities["violation"];
 		if (typeof p !== "number" || !Number.isFinite(p)) {
-			return {
-				status: "unavailable",
-				reason: "malformed",
-				detail: `Review answer "${id}" had no usable violation probability.`,
-				latencyMs,
-			};
+			return fail("malformed", `Review answer "${id}" had no usable violation probability.`);
 		}
 		probabilities[id] = p;
 		confidence = Math.min(confidence, answer.confidence);

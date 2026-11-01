@@ -60,14 +60,6 @@ export function createLogRow(
 	return { ts: ts ?? new Date().toISOString(), tool, value, cwd, verdict, reason };
 }
 
-export function withReview(row: GateLogRow, review: ReviewSummary): GateLogRow {
-	return { ...row, ...review };
-}
-
-export function withPlan(row: GateLogRow, plan: string): GateLogRow {
-	return { ...row, plan };
-}
-
 export function formatLogRow(row: GateLogRow): string {
 	return JSON.stringify(row) + "\n";
 }

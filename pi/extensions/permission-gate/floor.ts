@@ -15,7 +15,7 @@
  *   secret never even reaches the judge API.
  */
 
-export type FloorCategory = "bash-shape" | "protected-path" | "exfil-shape";
+type FloorCategory = "bash-shape" | "protected-path" | "exfil-shape";
 
 export interface FloorHit {
 	readonly category: FloorCategory;
@@ -35,7 +35,7 @@ function stripGitEnvPrefix(command: string): string {
 	return command.startsWith(GIT_ENV_PREFIX) ? command.slice(GIT_ENV_PREFIX.length) : command;
 }
 
-/** Split a command on sequencing operators (; && ||). Single pipes stay intact. */
+/** Split on sequencing operators; a single pipe is one segment. */
 function sequenceSegments(command: string): string[] {
 	return command.split(/;|&&|\|\|/).map((seg) => seg.trim()).filter((seg) => seg.length > 0);
 }
@@ -46,7 +46,7 @@ function sequenceSegments(command: string): string[] {
  * `command sudo …`, `env sudo …`. Without this, every floor shape is one
  * alias away from being bypassed.
  */
-export function normalizeSegment(segment: string): string {
+function normalizeSegment(segment: string): string {
 	let out = segment.trim();
 	for (;;) {
 		const before = out;
@@ -113,12 +113,10 @@ const BASH_SHAPES: readonly BashShape[] = [
 		match: (c) => /\b(curl|wget)\b[\s\S]*\|\s*(sudo\s+)?(sh|bash|zsh|fish|dash)\b/.test(c),
 	},
 	{
-		// Dumping the environment (or named secrets) into output ships secrets
-		// to the chat provider via tool results. No network needed.
+		// Env dumps exfiltrate through tool results; no network needed.
 		reason: "secret-dump",
 		detail: "Dumping secrets or the environment into output is never done autonomously. Inspect them yourself.",
-		// Segment-anchored: a path operand that merely says `.env` is not a
-		// dump (`find . -name ".env" | head` must stay free).
+		// Segment-anchored so `find . -name ".env" | head` stays free.
 		match: (c) =>
 			/^\s*(env|printenv)\s*(\||$)/.test(c) ||
 			/^\s*(env|printenv)\s+-[^|;&]*\|/.test(c) ||
@@ -131,14 +129,11 @@ const BASH_SHAPES: readonly BashShape[] = [
 function checkBashShape(command: string): FloorHit | null {
 	const clean = stripGitEnvPrefix(command.trim());
 	if (!clean) return null;
-	// Whole-command shapes first (they span pipes).
 	for (const shape of BASH_SHAPES) {
 		if (shape.reason === "remote-code-execution" && shape.match(clean)) {
 			return { category: "bash-shape", reason: shape.reason, detail: shape.detail };
 		}
 	}
-	// Every other shape applies per sequence segment: `echo hi; sudo rm -rf /`
-	// must not slip past a start-anchored match.
 	for (const raw of sequenceSegments(clean)) {
 		const segment = normalizeSegment(raw);
 		if (!segment) continue;
@@ -190,46 +185,42 @@ function checkExfilShape(command: string): FloorHit | null {
 	};
 }
 
+/**
+ * Credential stores. Reading one of these into agent context exfiltrates it to
+ * the chat provider, so they block rather than reach the reviewer. Directories
+ * match at any depth; the auth files are named because they hold live tokens
+ * without looking like keys.
+ */
+const CREDENTIAL_DIRS = [
+	"/.ssh",
+	"/.gnupg",
+	"/.aws",
+	"/.kube",
+	"/.docker",
+	"/secrets",
+	"/.config/gcloud",
+	"/.azure",
+	"/.terraform.d",
+	"/.password-store",
+];
+
+const CREDENTIAL_FILES = [
+	/(^|\/)\.envrc$/,
+	/(^|\/)\.netrc$/,
+	/(^|\/)\.npmrc$/,
+	/(^|\/)\.pypirc$/,
+	/(^|\/)\.pi\/agent\/auth\.json$/,
+	/(^|\/)\.config\/gh\/hosts\.yml$/,
+	/(^|\/)\.docker\/config\.json$/,
+	/\.pem$/i,
+	/\.key$/i,
+	/\.p12$/,
+	/\.pfx$/,
+];
+
 function isCredentialPath(path: string): boolean {
-	const lower = path.toLowerCase();
-	return (
-		path.includes("/.ssh/") ||
-		path.endsWith("/.ssh") ||
-		path.includes("/.gnupg/") ||
-		path.endsWith("/.gnupg") ||
-		path.includes("/.aws/") ||
-		path.endsWith("/.aws") ||
-		path.includes("/.kube/") ||
-		path.endsWith("/.kube") ||
-		path.includes("/.docker/") ||
-		path.endsWith("/.docker") ||
-		// Reading secrets into agent context exfiltrates them to the chat
-		// provider — block, don't judge. Same for Trust-on-read exec files.
-		path.includes("/secrets/") ||
-		path.endsWith("/secrets") ||
-		// Auth files are credential stores even when they are not named like
-		// keys: each one holds live tokens for a provider or registry.
-		path.endsWith("/.pi/agent/auth.json") ||
-		path.endsWith("/.netrc") ||
-		path.includes("/.npmrc") ||
-		path.endsWith("/.npmrc") ||
-		path.endsWith("/.pypirc") ||
-		path.includes("/.config/gh/hosts.yml") ||
-		path.includes("/.docker/config.json") ||
-		path.includes("/.config/gcloud/") ||
-		path.endsWith("/.config/gcloud") ||
-		path.includes("/.azure/") ||
-		path.endsWith("/.azure") ||
-		path.includes("/.terraform.d/") ||
-		path.endsWith("/.terraform.d") ||
-		path.includes("/.password-store/") ||
-		path.endsWith("/.password-store") ||
-		lower.endsWith(".envrc") ||
-		/\.pem$/i.test(path) ||
-		/\.key$/i.test(path) ||
-		/\.p12$/.test(path) ||
-		/\.pfx$/.test(path)
-	);
+	if (CREDENTIAL_DIRS.some((dir) => path.endsWith(dir) || path.includes(`${dir}/`))) return true;
+	return CREDENTIAL_FILES.some((pattern) => pattern.test(path));
 }
 
 function isGitInternalPath(path: string): boolean {
@@ -293,7 +284,7 @@ export function pathNeedsReview(resolvedPath: string, cwd: string): boolean {
 	);
 }
 
-export function isOutsideWorkspace(resolvedPath: string, cwd: string): boolean {
+function isOutsideWorkspace(resolvedPath: string, cwd: string): boolean {
 	if (resolvedPath === cwd) return false;
 	return !resolvedPath.startsWith(cwd.endsWith("/") ? cwd : cwd + "/");
 }

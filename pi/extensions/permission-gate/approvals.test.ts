@@ -7,9 +7,10 @@ describe("BlockBuffer", () => {
 		for (let i = 1; i <= 4; i++) {
 			buf.push({
 				tool: "bash",
+				description: `run \`cmd${i}\``,
 				value: `cmd${i}`,
 				cwd: "/proj",
-				kind: "judge",
+				kind: "review",
 				reason: "p-block",
 				detail: `d${i}`,
 				ts: new Date().toISOString(),
@@ -25,6 +26,7 @@ describe("BlockBuffer", () => {
 		expect(
 			describeBlocked({
 				tool: "bash",
+				description: "run `rm -rf build`",
 				value: "rm -rf build",
 				cwd: "/p",
 				kind: "floor",
@@ -32,7 +34,7 @@ describe("BlockBuffer", () => {
 				detail: "d",
 				ts: "t",
 			}),
-		).toBe("[floor] bash rm -rf build — recursive-delete");
+		).toBe("[floor] run `rm -rf build` — recursive-delete");
 	});
 });
 

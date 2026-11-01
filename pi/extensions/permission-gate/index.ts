@@ -1,16 +1,16 @@
 /**
  * Permission Gate for Pi.
  *
- * Replaces the pattern-based permission system with the shape both shipped
- * prior arts converged on (OpenRouter Armor, Claude Code auto mode, Vercel fx):
+ * The shape both shipped prior arts converged on (OpenRouter Armor, Claude Code
+ * auto mode, Vercel fx):
  *
  *   planner (deterministic, read-only)  → free
  *   floor   (deterministic, final)      → block
  *   reviewer (narrow questions)         → allow / hold / block
  *
- * The planner proves routine read-only shell work, so it never pays for a
- * model call. The floor owns crisp-bad shapes and paths. The reviewer only sees
- * what neither could decide, and it is asked three separate narrow questions
+ * The planner proves routine read-only shell work, so it never pays for a model
+ * call. The floor owns crisp-bad shapes and paths. The reviewer only sees what
+ * neither could decide, and it is asked three separate narrow questions
  * (injection, exfiltration, external effect) instead of one bundled safety
  * question, with the user's own words and the recorded environment attached.
  *
@@ -23,7 +23,7 @@
  * }
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { BlockBuffer, describeBlocked, PendingApproval, type BlockedCall } from "./approvals.js";
@@ -36,10 +36,9 @@ import {
 	formatLogRow,
 	parseLogRow,
 	renderLogRow,
-	withPlan,
-	withReview,
 	type GateLogRow,
 	type LogVerdict,
+	type ReviewSummary,
 } from "./log.js";
 import { planCommand } from "./plan.js";
 import { POLICY_VERSION, questionsForTool } from "./policy.js";
@@ -53,7 +52,7 @@ export interface GateConfig {
 	readonly timeoutMs: number;
 	/** What to do with a mid-band review: refuse with guidance, or ask the human. */
 	readonly onUncertain: "hold" | "ask";
-	readonly profiles?: Readonly<Record<string, Partial<Thresholds>>>;
+	readonly profiles?: Readonly<Record<string, unknown>>;
 }
 
 export const DEFAULT_CONFIG: GateConfig = {
@@ -64,10 +63,14 @@ export const DEFAULT_CONFIG: GateConfig = {
 	onUncertain: "hold",
 };
 
+type Blocked = { readonly block: true; readonly reason: string };
+
 function getAgentDir(): string {
 	const home = process.env["HOME"] || process.env["USERPROFILE"] || "/tmp";
 	return join(home, ".pi", "agent");
 }
+
+const str = (value: unknown, fallback: string): string => (typeof value === "string" ? value : fallback);
 
 function loadConfig(): GateConfig {
 	const path = join(getAgentDir(), "gate.json");
@@ -76,19 +79,16 @@ function loadConfig(): GateConfig {
 		const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
 		if (typeof parsed !== "object" || parsed === null) return DEFAULT_CONFIG;
 		const record = parsed as Record<string, unknown>;
-		let config: GateConfig = { ...DEFAULT_CONFIG };
-		if (typeof record["provider"] === "string") config = { ...config, provider: record["provider"] };
-		if (typeof record["model"] === "string") config = { ...config, model: record["model"] };
-		const thresholds = parseThresholds(record, { allowAt: config.allowAt, denyAt: config.denyAt });
-		config = { ...config, ...thresholds };
-		if (typeof record["timeoutMs"] === "number") config = { ...config, timeoutMs: record["timeoutMs"] };
-		if (record["onUncertain"] === "hold" || record["onUncertain"] === "ask") {
-			config = { ...config, onUncertain: record["onUncertain"] };
-		}
-		if (typeof record["profiles"] === "object" && record["profiles"] !== null) {
-			config = { ...config, profiles: record["profiles"] as GateConfig["profiles"] };
-		}
-		return config;
+		const onUncertain = record["onUncertain"] === "ask" ? "ask" : "hold";
+		const profiles = typeof record["profiles"] === "object" && record["profiles"] !== null ? record["profiles"] : undefined;
+		return {
+			provider: str(record["provider"], DEFAULT_CONFIG.provider),
+			model: str(record["model"], DEFAULT_CONFIG.model),
+			timeoutMs: typeof record["timeoutMs"] === "number" ? record["timeoutMs"] : DEFAULT_CONFIG.timeoutMs,
+			onUncertain,
+			...(profiles === undefined ? {} : { profiles: profiles as Record<string, unknown> }),
+			...parseThresholds(record, DEFAULT_THRESHOLDS),
+		};
 	} catch (error) {
 		console.error(`[permission-gate] Warning: could not parse ${path}: ${error}`);
 		return DEFAULT_CONFIG;
@@ -97,46 +97,40 @@ function loadConfig(): GateConfig {
 
 /** Effective thresholds: a valid per-model profile wins, else the top-level pair. */
 export function resolveThresholds(config: GateConfig): Thresholds {
-	const base = { allowAt: config.allowAt, denyAt: config.denyAt };
-	return parseThresholds(config.profiles?.[modelKey(config)], base);
+	return parseThresholds(config.profiles?.[modelKey(config)], {
+		allowAt: config.allowAt,
+		denyAt: config.denyAt,
+	});
 }
 
-/** Primary value per tool: command text, file path, or URL. */
-function getToolValue(toolName: string, input: Record<string, unknown>): string {
+export interface ToolCall {
+	/** Primary value as the model wrote it: command text, path, or URL. */
+	readonly value: string;
+	/** Same value with file paths resolved, for floor and planner checks. */
+	readonly resolved: string;
+	readonly description: string;
+}
+
+/** One switch instead of three parallel ones over the same tool names. */
+export function describeToolCall(toolName: string, input: Record<string, unknown>, cwd: string): ToolCall {
+	const path = String(input["path"] ?? "");
+	const command = String(input["command"] ?? "");
+	const url = String(input["url"] ?? "");
 	switch (toolName) {
 		case "read":
 		case "write":
 		case "edit":
-			return String(input["path"] ?? "");
+			return { value: path, resolved: path ? resolve(cwd, path) : path, description: `${toolName} \`${path}\`` };
 		case "bash":
-			return String(input["command"] ?? "");
+			return { value: command, resolved: command, description: `run \`${command}\`` };
 		case "webfetch":
-			return String(input["url"] ?? "");
+			return { value: url, resolved: url, description: `fetch \`${url}\`` };
 		default:
-			return String(input["path"] ?? input["command"] ?? input["url"] ?? input["query"] ?? JSON.stringify(input));
-	}
-}
-
-/** Resolve file-tool paths against the workspace so the floor sees absolute paths. */
-function resolveValue(toolName: string, value: string, cwd: string): string {
-	if ((toolName === "read" || toolName === "write" || toolName === "edit") && value) {
-		return resolve(cwd, value);
-	}
-	return value;
-}
-
-function formatToolDescription(toolName: string, input: Record<string, unknown>): string {
-	switch (toolName) {
-		case "read":
-		case "write":
-		case "edit":
-			return `${toolName} \`${input["path"]}\``;
-		case "bash":
-			return `run \`${input["command"]}\``;
-		case "webfetch":
-			return `fetch \`${input["url"]}\``;
-		default:
-			return `call ${toolName}`;
+			return {
+				value: String(input["query"] ?? JSON.stringify(input)),
+				resolved: String(input["query"] ?? JSON.stringify(input)),
+				description: `call ${toolName}`,
+			};
 	}
 }
 
@@ -160,58 +154,51 @@ interface SessionLike {
 	};
 }
 
-/**
- * Trusted user turns from the session, oldest first. Only `role: "user"`
- * messages count: assistant prose, tool results, and compaction summaries are
- * never authorization.
- */
-export function readUserTurns(ctx: SessionLike): string[] {
-	const collect = (messages: readonly unknown[]): string[] => {
-		const turns: string[] = [];
-		for (const message of messages) {
-			if (typeof message !== "object" || message === null) continue;
-			const record = message as Record<string, unknown>;
-			if (record["role"] !== "user") continue;
-			const text = userMessageText(record["content"]);
-			if (text.trim().length > 0) turns.push(text);
-		}
-		return turns;
-	};
+function userTurnsFrom(messages: readonly unknown[]): string[] {
+	const turns: string[] = [];
+	for (const message of messages) {
+		if (typeof message !== "object" || message === null) continue;
+		const record = message as Record<string, unknown>;
+		if (record["role"] !== "user") continue;
+		const text = userMessageText(record["content"]);
+		if (text.trim().length > 0) turns.push(text);
+	}
+	return turns;
+}
 
+/** Trusted user turns, oldest first, from the session projection or its entries. */
+export function readUserTurns(ctx: SessionLike): string[] {
+	const entriesOf = (): readonly unknown[] => {
+		try {
+			return ctx.sessionManager.getEntries?.() ?? [];
+		} catch {
+			return [];
+		}
+	};
 	try {
 		const projection = ctx.sessionManager.buildSessionProjection?.();
-		if (projection && projection.messages.length > 0) {
-			const turns = collect(projection.messages);
-			if (turns.length > 0) return turns;
-		}
+		const turns = projection ? userTurnsFrom(projection.messages) : [];
+		if (turns.length > 0) return turns;
 	} catch {}
-
-	try {
-		const entries = ctx.sessionManager.getEntries?.() ?? [];
-		const messages: unknown[] = [];
-		for (const entry of entries) {
-			if (typeof entry !== "object" || entry === null) continue;
+	return userTurnsFrom(
+		entriesOf().flatMap((entry) => {
+			if (typeof entry !== "object" || entry === null) return [];
 			const record = entry as Record<string, unknown>;
-			if (record["type"] === "message" && typeof record["message"] === "object") messages.push(record["message"]);
-		}
-		return collect(messages);
-	} catch {
-		return [];
-	}
+			return record["type"] === "message" && typeof record["message"] === "object" ? [record["message"]] : [];
+		}),
+	);
 }
 
 export function readIntent(ctx: SessionLike): IntentContext | null {
 	const turns = readUserTurns(ctx);
 	if (turns.length === 0) return null;
-	// Compaction hides earlier turns; the earliest surviving turn is not the
-	// first thing the user asked, and the reviewer must be told that.
+	// Compaction hides earlier turns; the earliest survivor is not the first
+	// thing the user asked, and the reviewer must be told that.
 	let historyComplete = true;
 	try {
-		const entries = ctx.sessionManager.getEntries?.() ?? [];
-		historyComplete = !entries.some((entry) => {
-			if (typeof entry !== "object" || entry === null) return false;
-			return (entry as Record<string, unknown>)["type"] === "compaction";
-		});
+		historyComplete = !(ctx.sessionManager.getEntries?.() ?? []).some(
+			(entry) => typeof entry === "object" && entry !== null && (entry as Record<string, unknown>)["type"] === "compaction",
+		);
 	} catch {}
 	return buildIntentContext(turns, { historyComplete });
 }
@@ -221,49 +208,57 @@ export default function permissionGate(pi: ExtensionAPI) {
 	const blocks = new BlockBuffer();
 	const pending = new PendingApproval();
 
-	function log(
+	const log = (
 		tool: string,
-		value: string,
+		call: ToolCall,
 		cwd: string,
 		verdict: LogVerdict,
 		reason: string,
 		extra?: (row: GateLogRow) => GateLogRow,
-	): void {
-		let row = createLogRow(tool, value, cwd, verdict, reason);
+	): void => {
+		let row = createLogRow(tool, call.value, cwd, verdict, reason);
 		if (extra) row = extra(row);
 		try {
 			const logPath = join(getAgentDir(), "gate.log.jsonl");
 			mkdirSync(dirname(logPath), { recursive: true });
 			appendFileSync(logPath, formatLogRow(row));
 		} catch {}
-	}
+	};
 
-	function pushBlock(
+	const pushBlock = (
 		tool: string,
-		value: string,
+		call: ToolCall,
 		cwd: string,
 		kind: BlockedCall["kind"],
 		reason: string,
 		detail: string,
-	): void {
-		blocks.push({ tool, value, cwd, kind, reason, detail, ts: new Date().toISOString() });
-	}
+	): void => {
+		blocks.push({ tool, description: call.description, value: call.value, cwd, kind, reason, detail, ts: new Date().toISOString() });
+	};
 
-	function blockResult(
-		tool: string,
-		value: string,
-		cwd: string,
-		reason: string,
-		detail: string,
-	): { block: true; reason: string } {
-		log(tool, value, cwd, "blocked", reason);
-		return { block: true as const, reason: `${detail} ${hardStop()}` };
-	}
-
-	function emitHerdrBlocked(active: boolean, label?: string): void {
+	const emitBlocked = (active: boolean, label?: string): void => {
 		try {
 			pi.events.emit("herdr:blocked", active ? { active: true, label } : { active: false });
 		} catch {}
+	};
+
+	/** One prompt flow for every human decision; the caller decides the verdict. */
+	async function askHuman(
+		ctx: ExtensionContext,
+		title: string,
+		call: ToolCall,
+		body?: string,
+	): Promise<boolean> {
+		emitBlocked(true, `${title}: ${call.description}`);
+		try {
+			const choice = await ctx.ui.select(
+				`${title}\n\n${body === undefined ? "" : `${body}\n\n`}The agent wants to ${call.description}\n\nAllow this action?`,
+				["Yes", "No"],
+			);
+			return choice === "Yes";
+		} finally {
+			emitBlocked(false);
+		}
 	}
 
 	pi.on("session_start", () => {
@@ -273,110 +268,79 @@ export default function permissionGate(pi: ExtensionAPI) {
 		clearEnvironmentCache();
 	});
 
-	pi.on("tool_call", async (event, ctx) => {
-		const input = event.input as Record<string, unknown>;
+	pi.on("tool_call", async (event, ctx): Promise<Blocked | undefined> => {
+		const call = describeToolCall(event.toolName, event.input as Record<string, unknown>, ctx.cwd);
 		const toolName = event.toolName;
-		const rawValue = getToolValue(toolName, input);
-		const value = resolveValue(toolName, rawValue, ctx.cwd);
 
 		// 1. One-shot /allow approval (the only override path, floor included).
-		if (pending.consume(toolName, value)) {
-			log(toolName, value, ctx.cwd, "override", "pending-approval-consumed");
+		if (pending.consume(toolName, call.resolved)) {
+			log(toolName, call, ctx.cwd, "override", "pending-approval-consumed");
 			return undefined;
 		}
 
 		// 2. Deterministic hard floor — final.
-		const hit: FloorHit | null = checkFloor(toolName, value);
+		const hit: FloorHit | null = checkFloor(toolName, call.resolved);
 		if (hit) {
-			pushBlock(toolName, rawValue, ctx.cwd, "floor", hit.reason, hit.detail);
-			log(toolName, value, ctx.cwd, "floor-blocked", hit.reason);
-			return {
-				block: true as const,
-				reason: `${hit.detail} Use /allow to approve this specific call. ${hardStop()}`,
-			};
+			pushBlock(toolName, call, ctx.cwd, "floor", hit.reason, hit.detail);
+			log(toolName, call, ctx.cwd, "floor-blocked", hit.reason);
+			return { block: true, reason: `${hit.detail} Use /allow to approve this specific call. ${hardStop()}` };
 		}
 
 		// 3. Writes/edits inside the workspace are floor-checked only: highest
 		// volume, lowest regret. Outside it they are how persistence gets
 		// installed (`~/.zshrc`, cron, another repo), so they get reviewed.
-		if ((toolName === "write" || toolName === "edit") && !pathNeedsReview(value, ctx.cwd)) {
-			return undefined;
+		// Reads likewise only when the target is worth a second opinion.
+		if (toolName === "write" || toolName === "edit" || toolName === "read") {
+			if (!pathNeedsReview(call.resolved, ctx.cwd)) return undefined;
 		}
 
-		// 4. Reads go to review only when the target is worth a second opinion.
-		if (toolName === "read" && !pathNeedsReview(value, ctx.cwd)) {
-			return undefined;
-		}
-
-		// 5. Planner: proven read-only shell work needs no model at all.
+		// 4. Planner: proven read-only shell work needs no model at all.
 		let planReason = "not_applicable";
 		let planDetail: string | undefined;
 		if (toolName === "bash") {
-			const plan = planCommand(rawValue);
+			const plan = planCommand(call.value, { cwd: ctx.cwd, repoRoot: readEnvironmentFacts(ctx.cwd).repoRoot });
 			if (plan.kind === "read_only") {
-				log(toolName, value, ctx.cwd, "free", "read_only", (row) => withPlan(row, "read_only"));
+				log(toolName, call, ctx.cwd, "free", "read_only", (row) => ({ ...row, plan: "read_only" }));
 				return undefined;
 			}
 			planReason = plan.reason;
 			planDetail = `not proven read-only: ${plan.reason}`;
 		}
 
-		// 6. Review: three narrow questions, trusted intent, environment facts.
+		// 5. Review: narrow questions, trusted intent, environment facts.
 		const thresholds = resolveThresholds(config);
-		const intent = readIntent(ctx);
-		const facts = readEnvironmentFacts(ctx.cwd, ctx.isProjectTrusted?.() ?? true);
 		const evidence = buildReviewEvidence(
 			{
 				toolName,
-				value,
+				value: call.resolved,
 				cwd: ctx.cwd,
 				...(planDetail === undefined ? {} : { detail: planDetail }),
 				...(event.toolCallId === undefined ? {} : { toolCallId: event.toolCallId }),
 				...(event.parentToolCallId === undefined ? {} : { parentToolCallId: event.parentToolCallId }),
 			},
-			intent,
-			facts,
+			readIntent(ctx),
+			readEnvironmentFacts(ctx.cwd, ctx.isProjectTrusted?.() ?? true),
 		);
-
 		const review: ReviewOutcome = await runReview(ctx.modelRegistry, config, evidence, questionsForTool(toolName), {
 			signal: ctx.signal,
 			timeoutMs: config.timeoutMs,
 		});
+		const planMeta = (row: GateLogRow): GateLogRow => ({ ...row, plan: planReason });
 
 		if (review.status === "unavailable") {
-			if (review.reason === "aborted") {
-				return { block: true as const, reason: "Aborted." };
+			if (review.reason === "aborted") return { block: true, reason: "Aborted." };
+			pushBlock(toolName, call, ctx.cwd, "review", review.reason, review.detail);
+			const detail = `Reviewer unavailable (${review.detail}).`;
+			if (ctx.hasUI && (await askHuman(ctx, "Reviewer unavailable", call, review.detail))) {
+				log(toolName, call, ctx.cwd, "allowed", `review-unavailable-approved: ${review.reason}`, planMeta);
+				return undefined;
 			}
-			pushBlock(toolName, rawValue, ctx.cwd, "review", review.reason, review.detail);
-			log(toolName, value, ctx.cwd, "prompted", `review-unavailable: ${review.reason}`, (row) => withPlan(row, planReason));
-			if (!ctx.hasUI) {
-				log(toolName, value, ctx.cwd, "blocked", `review-unavailable-no-ui: ${review.reason}`, (row) =>
-					withPlan(row, planReason),
-				);
-				return {
-					block: true as const,
-					reason: `Reviewer unavailable (${review.detail}). No UI to confirm. ${hardStop()}`,
-				};
-			}
-			const description = formatToolDescription(toolName, input);
-			emitHerdrBlocked(true, `Reviewer unavailable: ${description}`);
-			try {
-				const choice = await ctx.ui.select(
-					`Reviewer unavailable\n\n${review.detail}\n\nThe agent wants to ${description}\n\nAllow this action?`,
-					["Yes", "No"],
-				);
-				if (choice === "Yes") {
-					log(toolName, value, ctx.cwd, "allowed", `review-unavailable-approved: ${review.reason}`);
-					return undefined;
-				}
-				return blockResult(toolName, value, ctx.cwd, "prompt-denied", "Blocked by user.");
-			} finally {
-				emitHerdrBlocked(false);
-			}
+			log(toolName, call, ctx.cwd, ctx.hasUI ? "prompted" : "blocked", `review-unavailable: ${review.reason}`, planMeta);
+			return { block: true, reason: `${detail} ${ctx.hasUI ? "" : "No UI to confirm. "}${hardStop()}` };
 		}
 
 		const decision = decideReview(review.probabilities, thresholds);
-		const summary = {
+		const summary: ReviewSummary = {
 			p: review.probabilities,
 			confidence: review.confidence,
 			allowAt: thresholds.allowAt,
@@ -386,56 +350,39 @@ export default function permissionGate(pi: ExtensionAPI) {
 			contextual: evidence.intentText.length > 0,
 			evidenceIncomplete: evidence.incomplete,
 		};
-		const withMeta = (row: GateLogRow): GateLogRow => withReview(withPlan(row, planReason), summary);
+		const withMeta = (row: GateLogRow): GateLogRow => ({ ...row, ...summary, plan: planReason });
+		const detail = describeDecision(decision);
 
 		if (decision.verdict === "allow") {
-			log(toolName, value, ctx.cwd, "allowed", decision.reason, withMeta);
+			log(toolName, call, ctx.cwd, "allowed", decision.reason, withMeta);
 			return undefined;
 		}
 
 		if (decision.verdict === "block") {
-			pushBlock(toolName, rawValue, ctx.cwd, "review", decision.reason, describeDecision(decision));
-			log(toolName, value, ctx.cwd, "blocked", decision.reason, withMeta);
-			return {
-				block: true as const,
-				reason: `${describeDecision(decision)} Use /allow to approve this specific call. ${hardStop()}`,
-			};
+			pushBlock(toolName, call, ctx.cwd, "review", decision.reason, detail);
+			log(toolName, call, ctx.cwd, "blocked", decision.reason, withMeta);
+			return { block: true, reason: `${detail} Use /allow to approve this specific call. ${hardStop()}` };
 		}
 
 		// Mid band. Default: refuse with guidance so the agent can adapt — the
 		// posture Armor and fx both take. A human prompt is opt-in (onUncertain:
 		// "ask") because it is the outcome this gate exists to remove.
-		pushBlock(toolName, rawValue, ctx.cwd, "review", decision.reason, describeDecision(decision));
-		if (config.onUncertain === "hold" || !ctx.hasUI) {
-			log(toolName, value, ctx.cwd, "held", decision.reason, withMeta);
-			return {
-				block: true as const,
-				reason: `${describeDecision(decision)} Make a narrower call, or ask the user. Use /allow to approve this exact call.`,
-			};
+		pushBlock(toolName, call, ctx.cwd, "review", decision.reason, detail);
+		if (config.onUncertain === "ask" && ctx.hasUI && (await askHuman(ctx, "Review held", call))) {
+			log(toolName, call, ctx.cwd, "allowed", "prompt-approved", withMeta);
+			return undefined;
 		}
-
-		const description = formatToolDescription(toolName, input);
-		emitHerdrBlocked(true, `Review held: ${description}`);
-		try {
-			const choice = await ctx.ui.select(
-				`Review held (${decision.reason})\n\nThe agent wants to ${description}\n\nAllow this action?`,
-				["Yes", "No"],
-			);
-			if (choice === "Yes") {
-				log(toolName, value, ctx.cwd, "allowed", "prompt-approved", withMeta);
-				return undefined;
-			}
-			return blockResult(toolName, value, ctx.cwd, "prompt-denied", "Blocked by user.");
-		} finally {
-			emitHerdrBlocked(false);
-		}
+		log(toolName, call, ctx.cwd, "held", decision.reason, withMeta);
+		return {
+			block: true,
+			reason: `${detail} Make a narrower call, or ask the user. Use /allow to approve this exact call.`,
+		};
 	});
 
-	// 7. .env output masking (redaction of read results, not a gate).
+	// 6. .env output masking (redaction of read results, not a gate).
 	pi.on("tool_result", async (event) => {
 		if (event.toolName !== "read") return undefined;
-		const path = String((event.input as Record<string, unknown>)["path"] ?? "");
-		if (!isEnvPath(path)) return undefined;
+		if (!isEnvPath(String((event.input as Record<string, unknown>)["path"] ?? ""))) return undefined;
 		let changed = false;
 		const content = event.content.map((part) => {
 			if (part.type !== "text" || typeof part.text !== "string") return part;
@@ -444,24 +391,25 @@ export default function permissionGate(pi: ExtensionAPI) {
 			changed = true;
 			return { ...part, text: masked };
 		});
-		if (!changed) return undefined;
-		return { content };
+		return changed ? { content } : undefined;
 	});
 
 	pi.registerCommand("judge", {
 		description: "Show the permission gate's reviewer, thresholds, and pending approval",
 		handler: async (_args, ctx) => {
 			const thresholds = resolveThresholds(config);
-			const lines = [
-				`policy: v${POLICY_VERSION}`,
-				`reviewer: ${config.provider}/${config.model}`,
-				`thresholds: allow <= ${thresholds.allowAt}, deny >= ${thresholds.denyAt}`,
-				`mid band: ${config.onUncertain === "hold" ? "hold (agent gets guidance)" : "ask the user"}`,
-				`pending approval: ${pending.has() ? "yes" : "no"}`,
-				`recent blocks: ${blocks.list().length}`,
-			];
-			for (const block of blocks.list()) lines.push(`  ${describeBlocked(block)}`);
-			ctx.ui.notify(lines.join("\n"), "info");
+			ctx.ui.notify(
+				[
+					`policy: v${POLICY_VERSION}`,
+					`reviewer: ${modelKey(config)}`,
+					`thresholds: allow <= ${thresholds.allowAt}, deny >= ${thresholds.denyAt}`,
+					`mid band: ${config.onUncertain === "hold" ? "hold (agent gets guidance)" : "ask the user"}`,
+					`pending approval: ${pending.has() ? "yes" : "no"}`,
+					`recent blocks: ${blocks.list().length}`,
+					...blocks.list().map((block) => `  ${describeBlocked(block)}`),
+				].join("\n"),
+				"info",
+			);
 		},
 	});
 
@@ -469,13 +417,14 @@ export default function permissionGate(pi: ExtensionAPI) {
 		description: "Show the most recent permission gate decisions",
 		handler: async (_args, ctx) => {
 			const path = join(getAgentDir(), "gate.log.jsonl");
-			if (!existsSync(path)) {
-				ctx.ui.notify("No gate log yet.", "info");
-				return;
-			}
-			const lines = readFileSync(path, "utf-8").trimEnd().split("\n").slice(-15);
-			const rows = lines.map((line) => parseLogRow(line)).filter((row): row is GateLogRow => row !== null);
-			ctx.ui.notify(rows.map((row) => renderLogRow(row)).join("\n"), "info");
+			if (!existsSync(path)) return ctx.ui.notify("No gate log yet.", "info");
+			const rows = readFileSync(path, "utf-8")
+				.split("\n")
+				.filter((line) => line.trim().length > 0)
+				.slice(-15)
+				.map((line) => parseLogRow(line))
+				.filter((row): row is GateLogRow => row !== null);
+			ctx.ui.notify(rows.map((row) => renderLogRow(row)).join("\n") || "Log file is empty.", "info");
 		},
 	});
 
@@ -483,27 +432,23 @@ export default function permissionGate(pi: ExtensionAPI) {
 		description: "Approve one recent block for this exact call (one shot)",
 		handler: async (_args, ctx) => {
 			const candidates = blocks.list();
-			if (candidates.length === 0) {
-				ctx.ui.notify("Nothing to approve.", "info");
-				return;
-			}
-			const choice = await ctx.ui.select(
-				"Approve which call?",
-				candidates.map((call) => describeBlocked(call)),
-			);
+			if (candidates.length === 0) return ctx.ui.notify("Nothing to approve.", "info");
+			const choice = await ctx.ui.select("Approve which call?", candidates.map(describeBlocked));
 			const picked = candidates.find((call) => describeBlocked(call) === choice);
 			if (!picked) return;
-			pending.set(picked.tool, resolveValue(picked.tool, picked.value, ctx.cwd));
-			log(picked.tool, picked.value, picked.cwd, "override", `approved-via-allow: ${picked.reason}`);
+			pending.set(
+				picked.tool,
+				describeToolCall(picked.tool, { path: picked.value, command: picked.value, url: picked.value }, ctx.cwd).resolved,
+			);
+			log(
+				picked.tool,
+				{ value: picked.value, resolved: picked.value, description: picked.description },
+				picked.cwd,
+				"override",
+				`approved-via-allow: ${picked.reason}`,
+			);
 			try {
-				pi.sendUserMessage(
-					`Approved one-shot: ${formatToolDescription(picked.tool, {
-						path: picked.value,
-						command: picked.value,
-						url: picked.value,
-					})}. Retry it now.`,
-					{ deliverAs: "steer" },
-				);
+				pi.sendUserMessage(`Approved one-shot: ${picked.tool}. Retry it now.`, { deliverAs: "steer" });
 			} catch (error) {
 				console.error(`[permission-gate] Failed to send retry nudge: ${error}`);
 			}
