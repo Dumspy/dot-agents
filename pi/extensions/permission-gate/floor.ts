@@ -40,6 +40,29 @@ function sequenceSegments(command: string): string[] {
 	return command.split(/;|&&|\|\|/).map((seg) => seg.trim()).filter((seg) => seg.length > 0);
 }
 
+/**
+ * Strip the wrappers a shell lets you put in front of any command, so a shape
+ * anchored at the start still matches: `FOO=1 sudo …`, `/usr/bin/sudo …`,
+ * `command sudo …`, `env sudo …`. Without this, every floor shape is one
+ * alias away from being bypassed.
+ */
+export function normalizeSegment(segment: string): string {
+	let out = segment.trim();
+	for (;;) {
+		const before = out;
+		// Leading variable assignments: FOO=1 BAR=$x cmd
+		out = out.replace(/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/, "");
+		// Wrappers that add no behavior of their own.
+		out = out.replace(/^(command|builtin|nocache|time)\s+/, "");
+		// Only when `env` wraps another command; bare `env` and `env | …` are
+		// environment dumps and must stay visible to the secret-dump shape.
+		out = out.replace(/^env\s+(-[^\s]+\s+)*(?=[^\s|;&])/, "");
+		// Absolute or ./relative program path -> bare name.
+		out = out.replace(/^(?:\.{0,2}\/)?(?:[^\s]*\/)([^\s/]+)/, "$1");
+		if (out === before) return out.trim();
+	}
+}
+
 interface BashShape {
 	readonly reason: string;
 	readonly detail: string;
@@ -50,7 +73,14 @@ const BASH_SHAPES: readonly BashShape[] = [
 	{
 		reason: "recursive-delete",
 		detail: "Recursive force deletion is never executed autonomously. Delete it yourself.",
-		match: (c) => /^\s*rm\s+(-[^\s|;&]*[rf][^\s|;&]*\s+)+/.test(c),
+		// Recursive only. `rm -f artifact` is routine cleanup and belongs to the
+		// reviewer, not a final block. Long flags are matched by name because
+		// `--force` contains an "r".
+		match: (c) => {
+			const words = c.trim().split(/\s+/);
+			if (words[0] !== "rm") return false;
+			return words.slice(1).some((word) => word === "--recursive" || /^-[a-zA-Z]*[rR][a-zA-Z]*$/.test(word));
+		},
 	},
 	{
 		reason: "sudo",
@@ -93,6 +123,7 @@ const BASH_SHAPES: readonly BashShape[] = [
 			/^\s*(env|printenv)\s*(\||$)/.test(c) ||
 			/^\s*(env|printenv)\s+-[^|;&]*\|/.test(c) ||
 			/^\s*set\s*$/.test(c) ||
+			/^\s*(export|declare\s+-[a-z]*x[a-z]*)\s*$/.test(c) ||
 			/^\s*echo\b[^|;&]*\$[A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)\b/i.test(c),
 	},
 ];
@@ -108,7 +139,9 @@ function checkBashShape(command: string): FloorHit | null {
 	}
 	// Every other shape applies per sequence segment: `echo hi; sudo rm -rf /`
 	// must not slip past a start-anchored match.
-	for (const segment of sequenceSegments(clean)) {
+	for (const raw of sequenceSegments(clean)) {
+		const segment = normalizeSegment(raw);
+		if (!segment) continue;
 		for (const shape of BASH_SHAPES) {
 			if (shape.reason === "remote-code-execution") continue;
 			if (shape.match(segment)) {
@@ -119,11 +152,18 @@ function checkBashShape(command: string): FloorHit | null {
 	return null;
 }
 
+/**
+ * Secret material, in the shapes it actually appears in commands: assignments
+ * (`api_key=`, `PGPASSWORD=`, `db.password=`), bearer tokens, PEM bodies, and
+ * provider-prefixed tokens. Case-insensitive on purpose — `_KEY` only matched
+ * screaming case, so `curl -d api_key=…` used to walk past both the exfil floor
+ * and redaction.
+ */
 const SECRET_PATTERNS: readonly RegExp[] = [
-	/\b[A-Za-z0-9_]*(_KEY|_TOKEN|_SECRET)\s*=\s*\S+/,
-	/\bBearer\s+\S{8,}/,
-	/-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-	/\b(sk-|ghp_|gho_|xox[bap]-)[A-Za-z0-9_-]{8,}/,
+	/\b[\w.-]*(?:key|token|secret|password|passwd|credential|apikey)[\w.-]*\s*[=:]\s*\S+/i,
+	/\bBearer\s+\S{8,}/i,
+	/-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
+	/\b(sk-|sk_live_|ghp_|gho_|github_pat_|xox[bap]-|AKIA)[A-Za-z0-9_-]{8,}/,
 ];
 
 const NETWORK_PATTERNS: readonly RegExp[] = [/\b(curl|wget|ssh|scp|ftp|nc)\b/, /https?:\/\//];
@@ -185,7 +225,7 @@ function isCredentialPath(path: string): boolean {
 		path.includes("/.password-store/") ||
 		path.endsWith("/.password-store") ||
 		lower.endsWith(".envrc") ||
-		/\.p(e)?m$/.test(path) ||
+		/\.pem$/i.test(path) ||
 		/\.key$/i.test(path) ||
 		/\.p12$/.test(path) ||
 		/\.pfx$/.test(path)
@@ -236,22 +276,24 @@ export function checkPathFloor(resolvedPath: string, isWrite: boolean): FloorHit
 }
 
 /**
- * Reads that deserve a semantic second opinion (floor already passed):
- * outside the workspace, or secret-adjacent names. Everything else reads free.
+ * Paths that deserve a review even though the floor passed: outside the
+ * workspace, or secret-adjacent names. Applies to reads and to writes/edits —
+ * a write to `~/.zshrc`, a cron directory, or another repository is persistent
+ * and outside the boundary the old `external_directory: ask` rule covered.
  */
-export function shouldJudgeRead(resolvedPath: string, cwd: string): boolean {
+export function pathNeedsReview(resolvedPath: string, cwd: string): boolean {
 	if (isOutsideWorkspace(resolvedPath, cwd)) return true;
 	const base = resolvedPath.toLowerCase();
 	return (
 		/(^|\/)\.env[^/]*$/.test(base) ||
 		base.includes("secret") ||
 		base.includes("credential") ||
-		/\.p(e)?m$/.test(base) ||
+		/\.pem$/i.test(base) ||
 		/\.key$/.test(base)
 	);
 }
 
-function isOutsideWorkspace(resolvedPath: string, cwd: string): boolean {
+export function isOutsideWorkspace(resolvedPath: string, cwd: string): boolean {
 	if (resolvedPath === cwd) return false;
 	return !resolvedPath.startsWith(cwd.endsWith("/") ? cwd : cwd + "/");
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideReview, describeDecision, DEFAULT_THRESHOLDS, validateThresholds } from "./decide.js";
+import { decideReview, describeDecision, DEFAULT_THRESHOLDS, parseThresholds, validateThresholds } from "./decide.js";
 
 const th = { allowAt: 0.25, denyAt: 0.6 };
 
@@ -67,5 +67,25 @@ describe("describeDecision", () => {
 		const text = describeDecision(decideReview({ exfiltration: 0.9 }, th));
 		expect(text).toContain("Blocked");
 		expect(text).toContain("secrets");
+	});
+});
+
+describe("parseThresholds", () => {
+	it("reads a valid pair", () => {
+		expect(parseThresholds({ allowAt: 0.3, denyAt: 0.7 }, { allowAt: 0.25, denyAt: 0.6 })).toEqual({ allowAt: 0.3, denyAt: 0.7 });
+	});
+
+	it("refuses an inverted or out-of-range pair instead of trusting it", () => {
+		const base = { allowAt: 0.25, denyAt: 0.6 };
+		expect(parseThresholds({ allowAt: 0.9, denyAt: 0.2 }, base)).toEqual(base);
+		expect(parseThresholds({ allowAt: -1, denyAt: 0.6 }, base)).toEqual(base);
+		expect(parseThresholds({ allowAt: 0.3 }, base)).toEqual({ allowAt: 0.3, denyAt: 0.6 });
+	});
+
+	it("falls back on junk", () => {
+		const base = { allowAt: 0.25, denyAt: 0.6 };
+		expect(parseThresholds(null, base)).toEqual(base);
+		expect(parseThresholds("nope", base)).toEqual(base);
+		expect(parseThresholds({ allowAt: "0.1" }, base)).toEqual(base);
 	});
 });

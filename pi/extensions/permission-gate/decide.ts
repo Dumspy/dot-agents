@@ -41,6 +41,20 @@ export function validateThresholds(th: Thresholds): string[] {
 	return errors;
 }
 
+/**
+ * Read a threshold pair from untrusted JSON, falling back to `base` field by
+ * field. Used for the top-level pair and for every per-model profile, so a bad
+ * profile cannot silently invert the bands.
+ */
+export function parseThresholds(value: unknown, base: Thresholds): Thresholds {
+	if (typeof value !== "object" || value === null) return base;
+	const record = value as Record<string, unknown>;
+	const allowAt = typeof record["allowAt"] === "number" ? record["allowAt"] : base.allowAt;
+	const denyAt = typeof record["denyAt"] === "number" ? record["denyAt"] : base.denyAt;
+	const candidate = { allowAt, denyAt };
+	return validateThresholds(candidate).length === 0 ? candidate : base;
+}
+
 export interface ReviewDecision {
 	readonly verdict: Verdict;
 	/** Short stable reason id for log rows. */

@@ -27,9 +27,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { BlockBuffer, describeBlocked, PendingApproval, type BlockedCall } from "./approvals.js";
-import { decideReview, describeDecision, DEFAULT_THRESHOLDS, validateThresholds, type Thresholds } from "./decide.js";
+import { decideReview, describeDecision, DEFAULT_THRESHOLDS, parseThresholds, type Thresholds } from "./decide.js";
 import { clearEnvironmentCache, readEnvironmentFacts } from "./environment.js";
-import { checkFloor, shouldJudgeRead, type FloorHit } from "./floor.js";
+import { checkFloor, pathNeedsReview, type FloorHit } from "./floor.js";
 import { buildIntentContext, userMessageText, type IntentContext } from "./intent.js";
 import {
 	createLogRow,
@@ -79,19 +79,14 @@ function loadConfig(): GateConfig {
 		let config: GateConfig = { ...DEFAULT_CONFIG };
 		if (typeof record["provider"] === "string") config = { ...config, provider: record["provider"] };
 		if (typeof record["model"] === "string") config = { ...config, model: record["model"] };
-		if (typeof record["allowAt"] === "number") config = { ...config, allowAt: record["allowAt"] };
-		if (typeof record["denyAt"] === "number") config = { ...config, denyAt: record["denyAt"] };
+		const thresholds = parseThresholds(record, { allowAt: config.allowAt, denyAt: config.denyAt });
+		config = { ...config, ...thresholds };
 		if (typeof record["timeoutMs"] === "number") config = { ...config, timeoutMs: record["timeoutMs"] };
 		if (record["onUncertain"] === "hold" || record["onUncertain"] === "ask") {
 			config = { ...config, onUncertain: record["onUncertain"] };
 		}
 		if (typeof record["profiles"] === "object" && record["profiles"] !== null) {
 			config = { ...config, profiles: record["profiles"] as GateConfig["profiles"] };
-		}
-		const errors = validateThresholds({ allowAt: config.allowAt, denyAt: config.denyAt });
-		if (errors.length > 0) {
-			console.error(`[permission-gate] ${path}: ${errors.join("; ")} — using defaults.`);
-			return DEFAULT_CONFIG;
 		}
 		return config;
 	} catch (error) {
@@ -100,13 +95,10 @@ function loadConfig(): GateConfig {
 	}
 }
 
-/** Effective thresholds: per-model profile wins, else the top-level pair. */
+/** Effective thresholds: a valid per-model profile wins, else the top-level pair. */
 export function resolveThresholds(config: GateConfig): Thresholds {
-	const profile = config.profiles?.[modelKey(config)];
-	return {
-		allowAt: profile?.allowAt ?? config.allowAt,
-		denyAt: profile?.denyAt ?? config.denyAt,
-	};
+	const base = { allowAt: config.allowAt, denyAt: config.denyAt };
+	return parseThresholds(config.profiles?.[modelKey(config)], base);
 }
 
 /** Primary value per tool: command text, file path, or URL. */
@@ -304,14 +296,15 @@ export default function permissionGate(pi: ExtensionAPI) {
 			};
 		}
 
-		// 3. Writes/edits are floor-checked only, never reviewed (fx reaches the
-		// same place with prepared file mutations; the floor owns the targets).
-		if (toolName === "write" || toolName === "edit") {
+		// 3. Writes/edits inside the workspace are floor-checked only: highest
+		// volume, lowest regret. Outside it they are how persistence gets
+		// installed (`~/.zshrc`, cron, another repo), so they get reviewed.
+		if ((toolName === "write" || toolName === "edit") && !pathNeedsReview(value, ctx.cwd)) {
 			return undefined;
 		}
 
 		// 4. Reads go to review only when the target is worth a second opinion.
-		if (toolName === "read" && !shouldJudgeRead(value, ctx.cwd)) {
+		if (toolName === "read" && !pathNeedsReview(value, ctx.cwd)) {
 			return undefined;
 		}
 
