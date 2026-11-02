@@ -31,11 +31,12 @@
     git-hooks,
     anthropics-agent-skills,
   }: let
+    # x86_64-darwin is not listed: nixpkgs 26.11 dropped it, and
+    # git-hooks.nix no longer supports it.
     systems = [
       "x86_64-linux"
       "aarch64-linux"
       "aarch64-darwin"
-      "x86_64-darwin"
     ];
 
     lib = nixpkgs.lib;
