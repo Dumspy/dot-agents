@@ -582,11 +582,15 @@ function planStage(words: Token[], scope: PlanScope): StagePlan {
 
 	// `export A=1 B=2` only sets variables for this shell; a bare `export`
 	// prints the environment and is the floor's business.
+	// `export A=1` only sets variables for this shell. A flag is not a no-op:
+	// `export -p` and `declare -p` print every live value.
 	if (command === "export" || command === "declare") {
 		const assignments = words.slice(1);
 		const onlyAssignments =
-			assignments.length > 0 && assignments.every((word) => /^[A-Za-z_][A-Za-z0-9_]*=|^-[a-z]+$/.test(word.value));
-		return onlyAssignments ? { executable: "builtin:export", argv: [command, ...assignments.map((w) => w.value)] } : "unsupported_argument";
+			assignments.length > 0 && assignments.every((word) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value));
+		return onlyAssignments
+			? { executable: "builtin:export", argv: [command, ...assignments.map((word) => word.value)] }
+			: "unsupported_argument";
 	}
 
 	if (command === "git") return planGit(words, scope);

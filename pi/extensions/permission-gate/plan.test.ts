@@ -220,3 +220,15 @@ describe("planner: git-interceptor prefix", () => {
 		expect(reason("export")).not.toBe("read_only");
 	});
 });
+
+describe("planner: export is only a no-op when it assigns", () => {
+	it("refuses print flags, which the floor also blocks", () => {
+		expect(reason("export -p")).not.toBe("read_only");
+		expect(reason("declare -p")).not.toBe("read_only");
+		expect(reason("declare -f")).not.toBe("read_only");
+	});
+
+	it("still plans the git-interceptor's assignment form", () => {
+		expect(reason("export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true")).toBe("read_only");
+	});
+});

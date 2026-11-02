@@ -141,7 +141,10 @@ const BASH_SHAPES: readonly BashShape[] = [
 			/^\s*(env|printenv)\s*(\||$)/.test(c) ||
 			/^\s*(env|printenv)\s+-[^|;&]*\|/.test(c) ||
 			/^\s*set\s*$/.test(c) ||
-			/^\s*(export|declare\s+-[a-z]*x[a-z]*)\s*$/.test(c) ||
+			// Bare and print-flag forms: `export -p`, `declare -p`, `declare -x`
+			// all print live values, and `-p`/`-x` mix in either order.
+			/^\s*(export|declare|typeset)\s*$/.test(c) ||
+			/^\s*(export|declare|typeset)\s+(-[a-zA-Z]*(p|x)[a-zA-Z]*\s*)+$/.test(c) ||
 			/^\s*echo\b[^|;&]*\$[A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)\b/i.test(c),
 	},
 ];

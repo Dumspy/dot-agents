@@ -286,3 +286,16 @@ describe("floor: export", () => {
 		expect(checkFloor("bash", "export FOO=1")).toBeNull();
 	});
 });
+
+describe("floor: printing forms of export and declare", () => {
+	it("blocks every spelling that prints live values", () => {
+		for (const command of ["export -p", "export -px", "declare -p", "declare -x", "declare -px", "typeset -p"]) {
+			expect(checkFloor("bash", command)?.reason, command).toBe("secret-dump");
+		}
+	});
+
+	it("leaves assignments and function listings alone", () => {
+		expect(checkFloor("bash", "export FOO=1")).toBeNull();
+		expect(checkFloor("bash", "declare -f")).toBeNull();
+	});
+});

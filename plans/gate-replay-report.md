@@ -1,28 +1,28 @@
 # Gate replay report
 
-Source: `~/.pi/agent/permissions.log.jsonl` — 9345 rows.
+Source: `~/.pi/agent/permissions.log.jsonl` — 9401 rows.
 
-Old system: 4779 rows cost a prompt or a denial, 4566 ran free.
+Old system: 4828 rows cost a prompt or a denial, 4573 ran free.
 
-| old prompt/deny rows (4779) | count | share |
+| old prompt/deny rows (4828) | count | share |
 |---|---|---|
-| now deterministic (planner or floor-only tool) | 659 | 13.8% |
-| now floor-blocked | 189 | 4.0% |
-| now one reviewer call (no prompt) | 3931 | 82.3% |
+| now deterministic (planner or floor-only tool) | 662 | 13.7% |
+| now floor-blocked | 189 | 3.9% |
+| now one reviewer call (no prompt) | 3977 | 82.4% |
 
-Old free rows (4566): 2079 now need the reviewer, 4 now hit the floor.
+Old free rows (4573): 2084 now need the reviewer, 4 now hit the floor.
 
 ## Reviewer reasons (old prompt/deny rows)
 
-- `unknown_command`: 1690
-- `unsupported_shell`: 423
-- `too_many_stages`: 349
-- `command_owned_input`: 305
-- `unsupported_argument`: 255
+- `unknown_command`: 1716
+- `unsupported_shell`: 426
+- `too_many_stages`: 353
+- `command_owned_input`: 311
+- `unsupported_argument`: 258
 - `webfetch`: 217
 - `network_access`: 206
-- `dynamic_word`: 120
-- `env_assignment`: 101
+- `dynamic_word`: 123
+- `env_assignment`: 102
 - `process_or_system`: 65
 - `background`: 65
 - `filesystem_write`: 59
@@ -53,29 +53,29 @@ Old free rows (4566): 2079 now need the reviewer, 4 now hit the floor.
 - `echo` (too_many_stages)
 # Gate replay report
 
-Source: `~/.pi/agent/permissions.log.jsonl (unique tool+value)` — 6759 rows.
+Source: `~/.pi/agent/permissions.log.jsonl (unique tool+value)` — 6814 rows.
 
-Old system: 4707 rows cost a prompt or a denial, 2052 ran free.
+Old system: 4756 rows cost a prompt or a denial, 2058 ran free.
 
-| old prompt/deny rows (4707) | count | share |
+| old prompt/deny rows (4756) | count | share |
 |---|---|---|
-| now deterministic (planner or floor-only tool) | 658 | 14.0% |
+| now deterministic (planner or floor-only tool) | 661 | 13.9% |
 | now floor-blocked | 188 | 4.0% |
-| now one reviewer call (no prompt) | 3861 | 82.0% |
+| now one reviewer call (no prompt) | 3907 | 82.1% |
 
-Old free rows (2052): 1078 now need the reviewer, 4 now hit the floor.
+Old free rows (2058): 1082 now need the reviewer, 4 now hit the floor.
 
 ## Reviewer reasons (old prompt/deny rows)
 
-- `unknown_command`: 1661
-- `unsupported_shell`: 422
-- `too_many_stages`: 349
-- `command_owned_input`: 302
-- `unsupported_argument`: 255
+- `unknown_command`: 1687
+- `unsupported_shell`: 425
+- `too_many_stages`: 353
+- `command_owned_input`: 308
+- `unsupported_argument`: 258
 - `network_access`: 206
 - `webfetch`: 202
-- `dynamic_word`: 120
-- `env_assignment`: 101
+- `dynamic_word`: 123
+- `env_assignment`: 102
 - `process_or_system`: 65
 - `background`: 65
 - `filesystem_write`: 59
