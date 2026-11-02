@@ -451,8 +451,8 @@ in {
         ".pi/agent/package.json".source = piDir + "/package.json";
         ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
-      # Judge gate static config
-      (lib.mkIf (cfg.pi.judge != null) {
+      # Permission gate static config
+      (lib.mkIf (cfg.pi.gate != null) {
         ".pi/agent/gate.json".source = gateJson;
       })
       # Pi keybindings
