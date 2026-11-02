@@ -1,24 +1,24 @@
 # Gate replay report
 
-Source: `~/.pi/agent/permissions.log.jsonl` — 9401 rows.
+Source: `~/.pi/agent/permissions.log.jsonl` — 9428 rows.
 
-Old system: 4828 rows cost a prompt or a denial, 4573 ran free.
+Old system: 4848 rows cost a prompt or a denial, 4580 ran free.
 
-| old prompt/deny rows (4828) | count | share |
+| old prompt/deny rows (4848) | count | share |
 |---|---|---|
-| now deterministic (planner or floor-only tool) | 662 | 13.7% |
-| now floor-blocked | 189 | 3.9% |
-| now one reviewer call (no prompt) | 3977 | 82.4% |
+| now deterministic (planner or floor-only tool) | 664 | 13.7% |
+| now floor-blocked | 190 | 3.9% |
+| now one reviewer call (no prompt) | 3994 | 82.4% |
 
-Old free rows (4573): 2084 now need the reviewer, 4 now hit the floor.
+Old free rows (4580): 2091 now need the reviewer, 4 now hit the floor.
 
 ## Reviewer reasons (old prompt/deny rows)
 
-- `unknown_command`: 1716
+- `unknown_command`: 1725
 - `unsupported_shell`: 426
-- `too_many_stages`: 353
-- `command_owned_input`: 311
-- `unsupported_argument`: 258
+- `too_many_stages`: 356
+- `command_owned_input`: 313
+- `unsupported_argument`: 261
 - `webfetch`: 217
 - `network_access`: 206
 - `dynamic_word`: 123
@@ -53,25 +53,25 @@ Old free rows (4573): 2084 now need the reviewer, 4 now hit the floor.
 - `echo` (too_many_stages)
 # Gate replay report
 
-Source: `~/.pi/agent/permissions.log.jsonl (unique tool+value)` — 6814 rows.
+Source: `~/.pi/agent/permissions.log.jsonl (unique tool+value)` — 6838 rows.
 
-Old system: 4756 rows cost a prompt or a denial, 2058 ran free.
+Old system: 4776 rows cost a prompt or a denial, 2062 ran free.
 
-| old prompt/deny rows (4756) | count | share |
+| old prompt/deny rows (4776) | count | share |
 |---|---|---|
-| now deterministic (planner or floor-only tool) | 661 | 13.9% |
-| now floor-blocked | 188 | 4.0% |
-| now one reviewer call (no prompt) | 3907 | 82.1% |
+| now deterministic (planner or floor-only tool) | 663 | 13.9% |
+| now floor-blocked | 189 | 4.0% |
+| now one reviewer call (no prompt) | 3924 | 82.2% |
 
-Old free rows (2058): 1082 now need the reviewer, 4 now hit the floor.
+Old free rows (2062): 1086 now need the reviewer, 4 now hit the floor.
 
 ## Reviewer reasons (old prompt/deny rows)
 
-- `unknown_command`: 1687
+- `unknown_command`: 1696
 - `unsupported_shell`: 425
-- `too_many_stages`: 353
-- `command_owned_input`: 308
-- `unsupported_argument`: 258
+- `too_many_stages`: 356
+- `command_owned_input`: 310
+- `unsupported_argument`: 261
 - `network_access`: 206
 - `webfetch`: 202
 - `dynamic_word`: 123
