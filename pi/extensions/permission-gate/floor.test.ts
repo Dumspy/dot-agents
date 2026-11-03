@@ -50,6 +50,7 @@ describe("checkFloor bash shapes", () => {
 
 	it("matches shapes in later pipeline stages", () => {
 		expect(checkFloor("bash", "echo hi | sudo tee /etc/x")?.reason).toBe("sudo");
+		expect(checkFloor("bash", "echo hi | sudo tee x 2>/dev/null")?.reason).toBe("sudo");
 		expect(checkFloor("bash", "ls | rm -rf build")?.reason).toBe("recursive-delete");
 		expect(checkFloor("bash", "cat x | xargs rm -rf ~")?.reason).toBe("recursive-delete");
 		expect(checkFloor("bash", 'echo hi | eval "rm -rf /"')?.reason).toBe("eval");

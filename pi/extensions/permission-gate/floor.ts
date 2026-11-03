@@ -15,6 +15,8 @@
  *   secret never even reaches the judge API.
  */
 
+import { scanShellSegments } from "./shell.js";
+
 type FloorCategory = "bash-shape" | "protected-path" | "exfil-shape";
 
 export interface FloorHit {
@@ -36,78 +38,16 @@ export function stripGitEnvPrefix(command: string): string {
 }
 
 /**
- * Split a command on top-level sequencing and pipeline operators, honoring
- * quotes and backslash escapes. A single pipe is a stage boundary for the
- * floor: `echo hi | sudo tee` must still hit the sudo shape. If the command
- * cannot be scanned (unbalanced quotes), return it whole so the caller falls
- * back to whole-command matching instead of guessing at segments.
+ * Floor view of the shared shell scanner: stage boundaries only, and an
+ * unscannable command stays whole so the shapes still see it. Unlike the
+ * planner this is non-strict — redirections and substitutions are left in the
+ * segment rather than refusing the scan, because the floor only needs to find
+ * a dangerous shape somewhere in the stage.
  */
-export function shellSegments(command: string): string[] {
-	const segments: string[] = [];
-	let current = "";
-	let inSingle = false;
-	let inDouble = false;
-	let i = 0;
-
-	while (i < command.length) {
-		const ch = command[i]!;
-		if (inSingle) {
-			current += ch;
-			if (ch === "'") inSingle = false;
-			i += 1;
-			continue;
-		}
-		if (inDouble) {
-			if (ch === "\\") {
-				const next = command[i + 1];
-				current += next === undefined ? ch : ch + next;
-				i += next === undefined ? 1 : 2;
-				continue;
-			}
-			current += ch;
-			if (ch === '"') inDouble = false;
-			i += 1;
-			continue;
-		}
-		if (ch === "'") {
-			inSingle = true;
-			current += ch;
-			i += 1;
-			continue;
-		}
-		if (ch === '"') {
-			inDouble = true;
-			current += ch;
-			i += 1;
-			continue;
-		}
-		if (ch === "\\") {
-			const next = command[i + 1];
-			current += next === undefined ? ch : ch + next;
-			i += next === undefined ? 1 : 2;
-			continue;
-		}
-		if (ch === "\n" || ch === "\r") {
-			segments.push(current);
-			current = "";
-			i += 1;
-			continue;
-		}
-		if (ch === ";" || ch === "|" || ch === "&") {
-			segments.push(current);
-			current = "";
-			// `&&` and `||` are two-character operators; a lone `&` is a
-			// background marker and a lone `|` a pipeline boundary.
-			i += command[i + 1] === ch ? 2 : 1;
-			continue;
-		}
-		current += ch;
-		i += 1;
-	}
-
-	if (inSingle || inDouble) return [command];
-	segments.push(current);
-	return segments.map((segment) => segment.trim()).filter((segment) => segment.length > 0);
+function shellSegments(command: string): string[] {
+	const scan = scanShellSegments(command);
+	if (scan.error !== null) return [command];
+	return scan.segments.map((segment) => segment.trim()).filter((segment) => segment.length > 0);
 }
 
 /**

@@ -13,6 +13,7 @@
 import { homedir } from "node:os";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { checkPathFloor, stripGitEnvPrefix } from "./floor.js";
+import { scanShellSegments } from "./shell.js";
 
 export type PlanRefusal =
 	| "empty_command"
@@ -105,9 +106,6 @@ const PROCESS_OR_SYSTEM = new Set([
 	"open",
 ]);
 
-/** Operators that end a stage. Redirections are refused outright. */
-const SEQUENCE_OPERATORS = new Set([";", "&&", "||", "|", "&"]);
-
 interface Token {
 	readonly value: string;
 	readonly quoted: boolean;
@@ -118,83 +116,13 @@ class ShellShapeError extends Error {}
 /**
  * Split a command into pipeline/sequence segments, honoring quotes.
  * Throws on anything the planner cannot reason about: unbalanced quotes,
- * redirections, command substitution, or a trailing operator.
+ * redirections, command substitution, or a trailing operator. The scan itself
+ * is shared with the floor (`shell.ts`); strict mode is what differs.
  */
 export function splitSegments(command: string): string[] {
-	const segments: string[] = [];
-	let current = "";
-	let inSingle = false;
-	let inDouble = false;
-	let i = 0;
-
-	while (i < command.length) {
-		const ch = command[i]!;
-		if (inSingle) {
-			current += ch;
-			if (ch === "'") inSingle = false;
-			i += 1;
-			continue;
-		}
-		if (inDouble) {
-			if (ch === "\\") {
-				const next = command[i + 1];
-				if (next === undefined) throw new ShellShapeError("trailing backslash");
-				current += ch + next;
-				i += 2;
-				continue;
-			}
-			if (ch === "`" || (ch === "$" && command[i + 1] === "(")) {
-				throw new ShellShapeError("command substitution");
-			}
-			current += ch;
-			if (ch === '"') inDouble = false;
-			i += 1;
-			continue;
-		}
-		if (ch === "'") {
-			inSingle = true;
-			current += ch;
-			i += 1;
-			continue;
-		}
-		if (ch === '"') {
-			inDouble = true;
-			current += ch;
-			i += 1;
-			continue;
-		}
-		if (ch === "`") throw new ShellShapeError("command substitution");
-		if (ch === "$" && (command[i + 1] === "(" || command[i + 1] === "{")) {
-			throw new ShellShapeError("expansion");
-		}
-		if (ch === "<" || ch === ">") throw new ShellShapeError("redirection");
-		// A newline is a command separator in `sh -c`; treating it as whitespace
-		// let `echo hi` on one line and `sudo rm -rf /` on the next plan as one
-		// read-only command.
-		if (ch === "\n" || ch === "\r") {
-			segments.push(current);
-			current = "";
-			i += 1;
-			continue;
-		}
-		if (ch === ";" || ch === "|" || ch === "&") {
-			segments.push(current);
-			current = "";
-			// Consume the two-character operators; a lone `&` is a background
-			// marker and must be refused rather than silently dropped.
-			if (ch === "&" && command[i + 1] !== "&") {
-				throw new ShellShapeError("background");
-			}
-			i += command[i + 1] === ch || (ch === "|" && command[i + 1] === "|") ? 2 : 1;
-			continue;
-		}
-		current += ch;
-		i += 1;
-	}
-
-	if (inSingle || inDouble) throw new ShellShapeError("unbalanced quotes");
-	segments.push(current);
-	return segments;
+	const scan = scanShellSegments(command, { strict: true });
+	if (scan.error !== null) throw new ShellShapeError(scan.error);
+	return [...scan.segments];
 }
 
 /** Tokenize one segment into argv words, keeping quote awareness. */

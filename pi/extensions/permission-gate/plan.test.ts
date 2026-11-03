@@ -18,9 +18,10 @@ describe("splitSegments", () => {
 		expect(splitSegments("a;b")).toEqual(["a", "b"]);
 	});
 
-	it("keeps operators inside quotes", () => {
+	it("keeps operators inside quotes and escaped operators", () => {
 		expect(splitSegments("grep 'a|b'")).toEqual(["grep 'a|b'"]);
 		expect(splitSegments('printf "%s;%s" a b')).toEqual(['printf "%s;%s" a b']);
+		expect(splitSegments("echo a \\| b")).toEqual(["echo a \\| b"]);
 	});
 
 	it("refuses redirections and command substitution", () => {
