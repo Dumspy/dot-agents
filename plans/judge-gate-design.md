@@ -4,7 +4,10 @@ Replaces `pi/extensions/permission-system` (pattern rules) and supersedes the
 Gondolin microVM sandbox (PR #34, to be closed once this proves out) with a
 single semantic gate: deterministic hard floor + SystemOne safety judge.
 
-Status: design agreed via grill session. Implementation not started.
+Status: **historical v1 design (2026-10-09).** Superseded by
+`plans/permission-gate.md`, which describes the shipped planner + floor +
+three-question reviewer. The calibration and prior-art sections below are kept
+because they explain why the design changed.
 
 ## Architecture
 
