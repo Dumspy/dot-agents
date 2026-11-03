@@ -35,12 +35,79 @@ export function stripGitEnvPrefix(command: string): string {
 	return command.startsWith(GIT_ENV_PREFIX) ? command.slice(GIT_ENV_PREFIX.length) : command;
 }
 
-/** Split on sequencing operators and newlines; a single pipe is one segment. */
-function sequenceSegments(command: string): string[] {
-	return command
-		.split(/;|&&|\|\||\n/)
-		.map((seg) => seg.trim())
-		.filter((seg) => seg.length > 0);
+/**
+ * Split a command on top-level sequencing and pipeline operators, honoring
+ * quotes and backslash escapes. A single pipe is a stage boundary for the
+ * floor: `echo hi | sudo tee` must still hit the sudo shape. If the command
+ * cannot be scanned (unbalanced quotes), return it whole so the caller falls
+ * back to whole-command matching instead of guessing at segments.
+ */
+export function shellSegments(command: string): string[] {
+	const segments: string[] = [];
+	let current = "";
+	let inSingle = false;
+	let inDouble = false;
+	let i = 0;
+
+	while (i < command.length) {
+		const ch = command[i]!;
+		if (inSingle) {
+			current += ch;
+			if (ch === "'") inSingle = false;
+			i += 1;
+			continue;
+		}
+		if (inDouble) {
+			if (ch === "\\") {
+				const next = command[i + 1];
+				current += next === undefined ? ch : ch + next;
+				i += next === undefined ? 1 : 2;
+				continue;
+			}
+			current += ch;
+			if (ch === '"') inDouble = false;
+			i += 1;
+			continue;
+		}
+		if (ch === "'") {
+			inSingle = true;
+			current += ch;
+			i += 1;
+			continue;
+		}
+		if (ch === '"') {
+			inDouble = true;
+			current += ch;
+			i += 1;
+			continue;
+		}
+		if (ch === "\\") {
+			const next = command[i + 1];
+			current += next === undefined ? ch : ch + next;
+			i += next === undefined ? 1 : 2;
+			continue;
+		}
+		if (ch === "\n" || ch === "\r") {
+			segments.push(current);
+			current = "";
+			i += 1;
+			continue;
+		}
+		if (ch === ";" || ch === "|" || ch === "&") {
+			segments.push(current);
+			current = "";
+			// `&&` and `||` are two-character operators; a lone `&` is a
+			// background marker and a lone `|` a pipeline boundary.
+			i += command[i + 1] === ch ? 2 : 1;
+			continue;
+		}
+		current += ch;
+		i += 1;
+	}
+
+	if (inSingle || inDouble) return [command];
+	segments.push(current);
+	return segments.map((segment) => segment.trim()).filter((segment) => segment.length > 0);
 }
 
 /**
@@ -60,6 +127,9 @@ function normalizeSegment(segment: string): string {
 		// Only when `env` wraps another command; bare `env` and `env | …` are
 		// environment dumps and must stay visible to the secret-dump shape.
 		out = out.replace(/^env\s+(-[^\s]+\s+)*(?=[^\s|;&])/, "");
+		// `xargs cmd` runs cmd with piped arguments; strip the launcher so a
+		// piped `xargs rm -rf` is still a recursive delete.
+		out = out.replace(/^xargs(?:\s+-[^\s]+)*\s+/, "");
 		// Absolute or ./relative program path -> bare name.
 		out = out.replace(/^(?:\.{0,2}\/)?(?:[^\s]*\/)([^\s/]+)/, "$1");
 		if (out === before) return out.trim();
@@ -157,7 +227,7 @@ function checkBashShape(command: string): FloorHit | null {
 			return { category: "bash-shape", reason: shape.reason, detail: shape.detail };
 		}
 	}
-	for (const raw of sequenceSegments(clean)) {
+	for (const raw of shellSegments(clean)) {
 		const segment = normalizeSegment(raw);
 		if (!segment) continue;
 		for (const shape of BASH_SHAPES) {

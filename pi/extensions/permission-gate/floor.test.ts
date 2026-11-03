@@ -48,6 +48,21 @@ describe("checkFloor bash shapes", () => {
 		expect(checkFloor("bash", 'echo "a; b" && ls')).toBeNull();
 	});
 
+	it("matches shapes in later pipeline stages", () => {
+		expect(checkFloor("bash", "echo hi | sudo tee /etc/x")?.reason).toBe("sudo");
+		expect(checkFloor("bash", "ls | rm -rf build")?.reason).toBe("recursive-delete");
+		expect(checkFloor("bash", "cat x | xargs rm -rf ~")?.reason).toBe("recursive-delete");
+		expect(checkFloor("bash", 'echo hi | eval "rm -rf /"')?.reason).toBe("eval");
+		expect(checkFloor("bash", "printf x | cat .env")?.reason).toBe("env-read");
+	});
+
+	it("does not split quoted or escaped operators", () => {
+		expect(checkFloor("bash", 'echo "x | sudo rm -rf /"')).toBeNull();
+		expect(checkFloor("bash", "rg 'a|b' .")).toBeNull();
+		expect(checkFloor("bash", "echo a \\| sudo rm -rf /")).toBeNull();
+		expect(checkFloor("bash", "git log | head")).toBeNull();
+	});
+
 	it("blocks secret dumps into tool output", () => {
 		expect(checkFloor("bash", 'env | grep -i -E "OP_|1PASS"')?.reason).toBe("secret-dump");
 		expect(checkFloor("bash", "printenv | sort")?.reason).toBe("secret-dump");
