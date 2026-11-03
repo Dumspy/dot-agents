@@ -10,10 +10,18 @@ pi/
 ├── tsconfig.json             # TypeScript config
 ├── AGENTS.md                 # This file
 └── extensions/
-    └── permission-system/         # Multi-file extension
-        ├── index.ts               # Extension entry point
-        ├── lib.ts                 # Pure logic (testable)
-        └── test.ts                # Unit tests
+    └── permission-gate/           # Multi-file extension
+        ├── index.ts               # Orchestration + commands
+        ├── plan.ts                # Read-only argv planner
+        ├── floor.ts               # Deterministic hard floor
+        ├── shell.ts               # Shared stage scanner
+        ├── review.ts              # Classifier call + evidence
+        ├── policy.ts              # The three questions
+        ├── intent.ts              # Trusted user turns
+        ├── environment.ts         # Git facts
+        ├── decide.ts              # allowAt/denyAt bands
+        ├── approvals.ts           # /allow one-shot
+        └── log.ts                 # JSONL rows
 ```
 
 **Flat file:** single `.ts` file directly in `extensions/`. Use this for simple extensions.  
@@ -96,71 +104,53 @@ Pi discovers them via `settings.json` → `packages` and loads them from
 `~/.pi/agent/npm/node_modules/<name>/`. See README.md for the full architecture and
 step-by-step guide for adding new ones.
 
-## Permission System Extension
+## Permission Gate Extension
 
-The built-in `permission-system` extension provides configurable gates and secret masking for Pi tools.
+The built-in `permission-gate` extension replaces glob rules with a planner, a
+deterministic floor, and a SystemOne reviewer. The shipped design lives in
+`plans/permission-gate.md`.
 
-### Permission values
+### Pipeline
 
-| Value | Behavior |
+| Layer | Behavior |
 |-------|----------|
-| `"allow"` | Execute without prompting |
-| `"deny"` | Block immediately |
-| `"ask"` | Show Yes/No/Explain prompt |
-| `"cloak"` | Allow, but mask secrets in the result (read tool only in v1) |
+| Planner (`plan.ts`) | Proves routine read-only shell work (`ls`, `cat`, `rg`, `git status`) and runs it without a model call. |
+| Floor (`floor.ts`) | Blocks final shapes/paths: recursive delete, sudo/eval/source, force-push, hard-reset, pipe-to-shell, env dumps, secret egress, paste uploads, credential stores, git internals, `.env` writes. Override only with `/allow`. |
+| Reviewer (`review.ts`, `policy.ts`) | One `classify()` call with three narrow questions: injection, exfiltration, external effect. `allowAt`/`denyAt` decide allow, hold, or block. |
+
+Writes/edits inside the workspace are floor-only. Flagged reads (outside the
+workspace or secret-adjacent) and calls outside it are reviewed. `.env` read
+output is masked.
 
 ### Config file
 
-Create `~/.pi/agent/permissions.json` (or use Nix — see README):
+Create `~/.pi/agent/gate.json` (or use Nix — see README):
 
 ```json
 {
-  "rules": {
-    "read": {
-      "*": "allow",
-      ".env": "cloak",
-      ".ssh/*": "deny"
-    },
-    "bash": {
-      "*": "ask",
-      "ls*": "allow"
-    }
-  },
-  "masks": {
-    "read": {
-      ".env": { "pattern": "(=).+", "replace": "$1" }
-    }
-  }
+  "provider": "typesafe",
+  "model": "jev-latest",
+  "allowAt": 0.25,
+  "denyAt": 0.6,
+  "onUncertain": "hold"
 }
 ```
 
-Rules and masks are merged with project-local `.pi/permissions.json` (project takes precedence).
+`onUncertain: "ask"` opens a Yes/No prompt for the middle band; the default
+`hold` refuses with guidance and no prompt. Per-model profiles are keyed by
+`provider/model`, e.g. `cloudflare-workers-ai/@cf/cloudflare/clef-flash`.
+Without provider credentials every reviewed call fails closed.
 
 ### Herdr integration
 
-While a permission prompt is on screen, the extension emits `herdr:blocked`
-on the extension event bus so Herdr's Pi integration marks the pane as blocked
-(waiting for human). Enabled by default; opt out with:
-
-```json
-{
-  "herdr": { "enabled": false }
-}
-```
-
-`/permissions` shows whether blocked reporting is enabled.
-
-### Mask patterns
-
-Each mask is a regex applied to the text content of `read` results:
-
-- `pattern` — JS RegExp pattern string
-- `replace` — Replacement template using native `.replace()` semantics (e.g. `"$1"`, `"$&"`)
-- `flags` — RegExp flags, defaults to `"g"`
-
-If `replace` is omitted, the matched text is replaced with asterisks (`*`).
+While a permission prompt is on screen (the reviewer-unavailable fallback or
+`onUncertain: "ask"`), the extension emits `herdr:blocked` on the extension
+event bus so Herdr's Pi integration marks the pane as blocked (waiting for
+human). The event is cleared when the prompt closes. `/judge` shows the
+current state.
 
 ### Commands
 
-- `/permissions` — show current rules and masks
-- `/permissions-reload` — reload config from disk
+- `/judge` — reviewer, thresholds, mid-band behavior, pending approval, recent blocks
+- `/gate-log` — the last 15 decisions from `~/.pi/agent/gate.log.jsonl`
+- `/allow` — one-shot approval for one recent block

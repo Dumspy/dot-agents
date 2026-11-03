@@ -11,7 +11,6 @@ Universal agent configuration for Pi, OpenCode, and future AI coding agents.
 | `pi/skills/` | Pi-specific skills | `~/.pi/agent/skills/` |
 | `pi/extensions/` | Pi TypeScript extensions | `~/.pi/agent/extensions/` |
 | `pi/themes/` | Pi terminal themes | `~/.pi/agent/themes/` |
-| `pi/permissions.json` | Pi permission config | `~/.pi/agent/permissions.json` |
 | `opencode/skills/` | OpenCode-specific skills | `~/.config/opencode/skills/` |
 | `opencode/commands/` | OpenCode commands | `~/.config/opencode/commands/` |
 | `opencode/extensions/` | OpenCode extensions | agent-specific |
@@ -60,8 +59,11 @@ programs.dot-agents = {
     extraExtensions = {
       "company-extension.ts" = ./path/to/company-extension.ts;
     };
-    permissions = {
-      read = { "*" = "allow"; };
+    gate = {
+      provider = "typesafe";
+      model = "jev-latest";
+      allowAt = 0.25;
+      denyAt = 0.6;
     };
   };
 };
@@ -98,12 +100,23 @@ dot-agents/
 └── home/             # Only exists in the `stow` branch (auto-generated)
 ```
 
-## Pi Permissions
+## Permission Gate
 
-The `permission-system` extension adds configurable permission gates and secret masking to Pi tools.
-When a tool matches an `"ask"` rule, a simple prompt appears with three options:
-**Yes**, **No**, and **Explain**. When a tool matches a `"cloak"` rule, the call is allowed
-but sensitive values in the result are masked (read tool only in v1).
+Pi tool calls go through three layers instead of glob rules:
+
+1. **Planner** — proves routine read-only shell work (`ls`, `cat`, `rg`,
+   `git status`, …) and lets it run without a model call.
+2. **Floor** — blocks crisp-bad shapes and paths finally: recursive delete,
+   `sudo`/`eval`/`source`, force-push, hard-reset, pipe-to-shell, env dumps,
+   secret egress, paste uploads, credential stores, git internals, `.env`
+   writes. Override only with `/allow`.
+3. **Reviewer** — one SystemOne classifier call asking three narrow questions
+   (injection, exfiltration, external effect) with the trusted user request and
+   git environment attached. `allowAt`/`denyAt` decide allow, hold, or block.
+
+Writes/edits inside the workspace are floor-only; flagged reads and calls
+outside it are reviewed. The full design, thresholds, privacy model, and
+measured results are in [`plans/permission-gate.md`](plans/permission-gate.md).
 
 ### Nix configuration
 
@@ -111,78 +124,15 @@ but sensitive values in the result are masked (read tool only in v1).
 programs.dot-agents = {
   enable = true;
   pi = {
-    # Auto-discover all extensions in pi/extensions/
-    extensions = null;
+    extensions = null;  # auto-discover all
 
-    # Permission rules (mirrors OpenCode's permission system)
-    permissions = {
-      read = {
-        "*" = "allow";
-        # Secrets & credentials — cloak instead of deny so the agent sees variable names but not values
-        ".env" = "cloak";
-        "*.env" = "cloak";
-        "*.env.*" = "cloak";
-        "*.envrc" = "deny";
-        "secrets/*" = "deny";
-        # Private keys & auth
-        ".ssh/*" = "deny";
-        ".gnupg/*" = "deny";
-        ".config/1password/*" = "deny";
-        "*.key" = "deny";
-        "*.pem" = "deny";
-        "*.p12" = "deny";
-        "*.pfx" = "deny";
-        # Cloud/container credentials
-        ".aws/*" = "deny";
-        ".docker/*" = "deny";
-        ".kube/*" = "deny";
-        # Version control internals
-        ".git/*" = "deny";
-        ".gitmodules" = "deny";
-        # Build artifacts
-        "node_modules/*" = "deny";
-        ".venv/*" = "deny";
-        "venv/*" = "deny";
-        "dist/*" = "deny";
-        "build/*" = "deny";
-        "target/*" = "deny";
-      };
-      write = {
-        "*" = "ask";
-        ".env" = "deny";
-        ".git/*" = "deny";
-        "node_modules/*" = "deny";
-        ".venv/*" = "deny";
-        "venv/*" = "deny";
-      };
-      edit = {
-        "*" = "ask";
-        ".env" = "deny";
-        ".git/*" = "deny";
-        "node_modules/*" = "deny";
-        ".venv/*" = "deny";
-        "venv/*" = "deny";
-      };
-      bash = {
-        "*" = "ask";
-        "ls*" = "allow";
-        "pwd" = "allow";
-        "git status*" = "allow";
-        "git diff*" = "allow";
-        "git log*" = "allow";
-        "dex *" = "allow";
-      };
-      webfetch = "ask";
-    };
-
-    # Mask patterns applied to read results when a rule resolves to "cloak"
-    masks = {
-      read = {
-        ".env" = { pattern = "(=).+"; replace = "$1"; };
-        "*.env" = { pattern = "(=).+"; replace = "$1"; };
-        "*.env.*" = { pattern = "(=).+"; replace = "$1"; };
-        "*.vars*" = { pattern = "(=).+"; replace = "$1"; };
-      };
+    # Static gate config → ~/.pi/agent/gate.json
+    gate = {
+      provider = "typesafe";
+      model = "jev-latest";
+      allowAt = 0.25;
+      denyAt = 0.6;
+      onUncertain = "hold";  # or "ask"
     };
   };
 };
@@ -190,31 +140,27 @@ programs.dot-agents = {
 
 ### Non-Nix configuration
 
-Copy `pi/extensions/permission-system.ts` to `~/.pi/agent/extensions/` and create
-`~/.pi/agent/permissions.json`:
+Copy `pi/extensions/permission-gate/` to `~/.pi/agent/extensions/` and create
+`~/.pi/agent/gate.json`:
 
 ```json
 {
-  "rules": {
-    "read": {
-      "*": "allow",
-      ".env": "cloak"
-    },
-    "bash": {
-      "*": "ask",
-      "ls*": "allow",
-      "pwd": "allow"
-    }
-  },
-  "masks": {
-    "read": {
-      ".env": { "pattern": "(=).+", "replace": "$1" }
-    }
-  }
+  "provider": "typesafe",
+  "model": "jev-latest",
+  "allowAt": 0.25,
+  "denyAt": 0.6,
+  "onUncertain": "hold"
 }
 ```
 
-Rules and masks are merged with project-local `.pi/permissions.json` (project takes precedence).
+The reviewer needs credentials for the selected provider (`pi auth check
+--provider typesafe`). Without them every reviewed call fails closed.
+
+### Commands
+
+- `/judge` — reviewer, thresholds, mid-band behavior, pending approval, recent blocks
+- `/gate-log` — the last 15 decisions from `~/.pi/agent/gate.log.jsonl`
+- `/allow` — one-shot approval for one recent block
 
 ## External Pi Extensions
 
@@ -395,32 +341,6 @@ automatically. Otherwise Pi will use it on next startup after `pi install npm:<n
 
 That's it. The rest is automatic — Nix builds and deploys the derivation,
 Home Manager merges settings.json, and stow runs `pi install`.
-
-## Pi Permissions (continued)
-
-### Permission values
-
-| Value | Behavior |
-|-------|----------|
-| `"allow"` | Execute without prompting |
-| `"deny"` | Block immediately |
-| `"ask"` | Show Yes/No/Explain prompt |
-| `"cloak"` | Allow, but mask secrets in the result (read tool only in v1) |
-
-### Mask patterns
-
-Each mask is a regex applied to the text content of `read` results:
-
-- `pattern` — JS RegExp pattern string
-- `replace` — Replacement template using native `.replace()` semantics (e.g. `"$1"`, `"$&"`)
-- `flags` — RegExp flags, defaults to `"g"`
-
-If `replace` is omitted, the matched text is replaced with asterisks (`*`).
-
-### Commands
-
-- `/permissions` — show current rules and masks
-- `/permissions-reload` — reload config from disk
 
 ## Adding Skills
 

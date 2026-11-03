@@ -130,11 +130,8 @@
         overlayExtensionNames}
     '';
 
-  # Generate permissions.json from Nix config
-  permissionsJson = pkgs.writeText "pi-permissions.json" (builtins.toJSON {
-    rules = cfg.pi.permissions;
-    masks = cfg.pi.masks;
-  });
+  # Generate gate.json (static permission-gate config) from Nix config
+  gateJson = pkgs.writeText "pi-gate.json" (builtins.toJSON cfg.pi.gate);
 
   # Generate keybindings.json from Nix config
   keybindingsJson = pkgs.writeText "pi-keybindings.json" (builtins.toJSON cfg.pi.keybindings);
@@ -237,60 +234,76 @@ in {
         '';
       };
 
-      permissions = lib.mkOption {
-        type = lib.types.attrsOf (lib.types.oneOf [lib.types.str (lib.types.attrsOf lib.types.str)]);
-        default = {};
-        description = ''
-          Pi permission rules, written to ~/.pi/agent/permissions.json under the `rules` key.
-          Each key is a tool name. The value is either:
-          - A single permission string: "allow", "deny", "ask", or "cloak"
-          - An attrset of glob patterns -> permission strings
-
-          Example:
-          {
-            read = {
-              "*" = "allow";
-              ".env" = "cloak";
-            };
-            bash = {
-              "*" = "ask";
-              "ls*" = "allow";
-            };
-            webfetch = "ask";
-          }
-        '';
-      };
-
-      masks = lib.mkOption {
-        type = lib.types.attrsOf (lib.types.attrsOf (lib.types.submodule {
+      gate = lib.mkOption {
+        type = lib.types.nullOr (lib.types.submodule {
           options = {
-            pattern = lib.mkOption {
+            provider = lib.mkOption {
               type = lib.types.str;
-              description = "Regex pattern to match sensitive values.";
+              default = "typesafe";
+              description = "SystemOne provider id (typesafe, cloudflare-workers-ai, openrouter, ...).";
             };
-            replace = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              description = "Replacement template (e.g. \"$1\"). Uses native JS replace semantics.";
+            model = lib.mkOption {
+              type = lib.types.str;
+              default = "jev-latest";
+              description = "Classifier model id within the provider.";
             };
-            flags = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              description = "Regex flags (e.g. \"g\", \"gi\"). Defaults to \"g\".";
+            allowAt = lib.mkOption {
+              type = lib.types.float;
+              default = 0.25;
+              description = "Violation probability at or below which an action is allowed (0 <= allowAt < denyAt).";
+            };
+            denyAt = lib.mkOption {
+              type = lib.types.float;
+              default = 0.6;
+              description = "Violation probability at or above which an action is blocked (allowAt < denyAt <= 1).";
+            };
+            onUncertain = lib.mkOption {
+              type = lib.types.enum ["hold" "ask"];
+              default = "hold";
+              description = ''
+                What a mid-band review does: "hold" refuses the call and gives the
+                agent guidance; "ask" opens a permission prompt.
+              '';
+            };
+            timeoutMs = lib.mkOption {
+              type = lib.types.int;
+              default = 4000;
+              description = "Per-attempt reviewer request timeout in milliseconds.";
+            };
+            profiles = lib.mkOption {
+              type = lib.types.attrsOf (lib.types.submodule {
+                options = {
+                  allowAt = lib.mkOption {
+                    type = lib.types.float;
+                    description = "allowAt for this model.";
+                  };
+                  denyAt = lib.mkOption {
+                    type = lib.types.float;
+                    description = "denyAt for this model.";
+                  };
+                };
+              });
+              default = {};
+              description = ''
+                Per-model threshold profiles, keyed by "provider/model".
+                Switching models loads the matching profile (or the top-level pair).
+              '';
             };
           };
-        }));
-        default = {};
+        });
+        default = null;
         description = ''
-          Mask patterns for the Pi permission system, written to ~/.pi/agent/permissions.json under the `masks` key.
-          Each top-level key is a tool name. Each inner key is a glob pattern matching the tool value (e.g. file path).
-          Only the `read` tool supports masking in v1.
+          Static permission-gate config, written to ~/.pi/agent/gate.json.
+          Null (default) leaves any existing gate.json unmanaged.
+          Model selection and threshold tuning at runtime happen via TUI
+          commands, not here — Nix owns the slow-moving static config only.
 
           Example:
           {
-            read = {
-              ".env" = { pattern = "(=).+"; replace = "$1"; };
-            };
+            provider = "typesafe";
+            model = "jev-latest";
+            allowAt = 0.25;
+            denyAt = 0.6;
           }
         '';
       };
@@ -438,9 +451,9 @@ in {
         ".pi/agent/package.json".source = piDir + "/package.json";
         ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
-      # Pi permissions
-      (lib.mkIf (cfg.pi.permissions != {} || cfg.pi.masks != {}) {
-        ".pi/agent/permissions.json".source = permissionsJson;
+      # Permission gate static config
+      (lib.mkIf (cfg.pi.gate != null) {
+        ".pi/agent/gate.json".source = gateJson;
       })
       # Pi keybindings
       (lib.mkIf (cfg.pi.keybindings != {}) {
