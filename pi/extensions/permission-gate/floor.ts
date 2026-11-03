@@ -82,6 +82,10 @@ interface BashShape {
 	readonly match: (command: string) => boolean;
 }
 
+/** Known paste/gist hosts; uploads to these are egress shapes. */
+const PASTE_HOSTS =
+	/\b(?:gist\.github\.com|gist\.githubusercontent\.com|pastebin\.com|paste\.ee|paste\.rs|dpaste\.(?:org|com)|hastebin\.com|termbin\.com|0x0\.st|transfer\.sh|file\.io|ix\.io)\b/i;
+
 /** Commands that would print an env file's contents into the transcript. */
 const SHELL_READERS = new Set(["cat", "grep", "rg", "head", "tail", "less", "more", "awk", "sed", "cut", "sort", "uniq", "nl", "strings", "xxd", "od"]);
 
@@ -141,6 +145,19 @@ const BASH_SHAPES: readonly BashShape[] = [
 				(word) => /^["']?(\.?\/)?[^"'\s]*(\.env(\.[\w-]+)?|\.envrc)["']?$/.test(word) && !ENV_TEMPLATES.test(word),
 			);
 		},
+	},
+	{
+		// Paste and gist services are egress channels: an upload there is a
+		// share, not a fetch. A fetch from one is ingress (untrusted content),
+		// which the reviewer's injection question owns, so only uploads are here.
+		reason: "paste-upload",
+		detail: "Uploading to a paste or gist service is never done autonomously. Share it yourself.",
+		match: (c) =>
+			/^\s*gh\s+gist\s+create\b/.test(c) ||
+			(PASTE_HOSTS.test(c) &&
+				/(^|\s)(?:-d|--data(?:-binary|-raw)?|-F|--form|-T|--upload-file|--post-data|--post-file|--body-data|--body-file)\b/.test(
+					c,
+				)),
 	},
 	{
 		// Env dumps exfiltrate through tool results; no network needed.
