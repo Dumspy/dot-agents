@@ -36,9 +36,14 @@ The tree mirrors the target paths under `$HOME`:
 
 ```
 .agents/skills/          -> ~/.agents/skills/
+.claude/skills/<name>    -> ../../.agents/skills/<name>  (Claude Code)
 .config/opencode/        -> ~/.config/opencode/
 .pi/agent/               -> ~/.pi/agent/
 ```
+
+Claude Code reads `~/.claude/skills/<name>/SKILL.md`. Each entry is a symlink to the universal skill, so the tree keeps one copy.
+
+Grok Bot skills live in `grokbot/skills/` on the `development` branch. This tree leaves that directory out. Grok Bot reads it from GitHub.
 
 External Pi extensions (see `nix/pi-external-extensions.nix` for the registry —
 currently empty) are installed automatically by

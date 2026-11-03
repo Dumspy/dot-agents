@@ -30,9 +30,11 @@ jobs:
       - name: Build stow tree
         run: |
           nix build .#stow-tree --out-link ./result
-          # Copy the result to a home/ directory
+          # Copy the result to a home/ directory. -a keeps the relative
+          # symlinks from .claude/skills/<name> to .agents/skills/<name>.
+          # The derivation already dereferences Nix store paths.
           mkdir -p home
-          cp -rL ./result/. home/
+          cp -a ./result/. home/
           # Nix store files are read-only; make them writable so we can delete later
           chmod -R +w home/
 

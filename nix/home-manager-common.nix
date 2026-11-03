@@ -18,7 +18,14 @@
         definition is symlinked as `<dir>/<skill>/`. One entry per agent
         harness that should discover the skills.
 
-        Default is `.agents/skills/` which both Pi and OpenCode support.
+        Default is `.agents/skills/`, which Pi and OpenCode discover.
+        Claude Code does not read that path. The module symlinks each
+        registry skill to `.claude/skills/<name>/` from the same package,
+        outside this list, so a symlink-tree install does not rsync
+        `--delete` over other Claude skills. Leave `.claude/skills` out
+        of this option.
+        Grok Bot reads `skills/` and `grokbot/skills/` from the Git
+        repository and has no install directory in this module.
       '';
     };
 
