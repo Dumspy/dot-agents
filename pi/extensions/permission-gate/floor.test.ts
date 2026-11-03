@@ -64,6 +64,18 @@ describe("checkFloor bash shapes", () => {
 		expect(checkFloor("bash", "git log | head")).toBeNull();
 	});
 
+	it("blocks the reported top-level rm shape", () => {
+		expect(checkFloor("bash", "rm -rf 'app/(tabs)' app/modal.tsx")?.reason).toBe("recursive-delete");
+	});
+
+	it("blocks shapes nested in a shell launcher", () => {
+		expect(checkFloor("bash", "bash -c 'rm -rf app'")?.reason).toBe("recursive-delete");
+		expect(checkFloor("bash", "sh -lc 'cd /tmp; sudo rm -rf x'")?.reason).toBe("sudo");
+		expect(checkFloor("bash", 'bash -c "bash -c \'rm -rf x\'"')?.reason).toBe("recursive-delete");
+		expect(checkFloor("bash", "bash -c 'ls -la'")).toBeNull();
+		expect(checkFloor("bash", 'bash -c "echo rm -rf"')).toBeNull();
+	});
+
 	it("blocks secret dumps into tool output", () => {
 		expect(checkFloor("bash", 'env | grep -i -E "OP_|1PASS"')?.reason).toBe("secret-dump");
 		expect(checkFloor("bash", "printenv | sort")?.reason).toBe("secret-dump");

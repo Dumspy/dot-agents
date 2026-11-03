@@ -159,7 +159,16 @@ const BASH_SHAPES: readonly BashShape[] = [
 	},
 ];
 
-function checkBashShape(command: string): FloorHit | null {
+/**
+ * A shell launcher with `-c` runs the quoted string as a command, so the inner
+ * command is still a shape, not an intent: `bash -c 'rm -rf app'` is a
+ * recursive delete however it is spelled. Recurse a bounded number of times so
+ * `bash -c 'bash -c …'` cannot loop.
+ */
+const NESTED_SHELL = /^\s*(?:bash|sh|zsh|dash|fish)\s+-[a-zA-Z]*c[a-zA-Z]*\s+(['"])([\s\S]*)\1\s*$/;
+const MAX_NESTED_SHELLS = 3;
+
+function checkBashShape(command: string, depth = 0): FloorHit | null {
 	const clean = stripGitEnvPrefix(command.trim());
 	if (!clean) return null;
 	for (const shape of BASH_SHAPES) {
@@ -174,6 +183,13 @@ function checkBashShape(command: string): FloorHit | null {
 			if (shape.reason === "remote-code-execution") continue;
 			if (shape.match(segment)) {
 				return { category: "bash-shape", reason: shape.reason, detail: shape.detail };
+			}
+		}
+		if (depth < MAX_NESTED_SHELLS) {
+			const nested = NESTED_SHELL.exec(segment)?.[2];
+			if (nested !== undefined) {
+				const hit = checkBashShape(nested, depth + 1);
+				if (hit) return hit;
 			}
 		}
 	}
