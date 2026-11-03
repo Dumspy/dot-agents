@@ -25,7 +25,10 @@
         onUncertain = "hold";
         profiles = {
           # Clef-flash hedges on every question, so it needs a tighter band.
-          "cloudflare/clef-flash" = {
+          # Key is "provider/model" as pi-ai resolves it. The native Cloudflare
+          # pair is below; through the gateway the same weights are
+          # "openrouter/cloudflare/clef-flash".
+          "cloudflare-workers-ai/@cf/cloudflare/clef-flash" = {
             allowAt = 0.2;
             denyAt = 0.5;
           };

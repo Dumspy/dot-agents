@@ -19,7 +19,7 @@
  *   "provider": "typesafe", "model": "jev-latest",
  *   "allowAt": 0.25, "denyAt": 0.6, "timeoutMs": 4000,
  *   "onUncertain": "hold",
- *   "profiles": { "cloudflare/clef-flash": { "allowAt": 0.2, "denyAt": 0.5 } }
+ *   "profiles": { "cloudflare-workers-ai/@cf/cloudflare/clef-flash": { "allowAt": 0.2, "denyAt": 0.5 } }
  * }
  */
 
