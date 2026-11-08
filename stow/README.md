@@ -40,10 +40,8 @@ The tree mirrors the target paths under `$HOME`:
 .pi/agent/               -> ~/.pi/agent/
 ```
 
-External Pi extensions (see `nix/pi-external-extensions.nix` for the registry —
-currently empty) are installed automatically by
-`setup.sh` if the `pi` CLI is available. See `nix/pi-external-extensions.nix`
-for the registry of available extensions.
+External Pi extensions (`nix/pi-external-extensions.nix`) are Nix-only and
+are not included in this branch.
 
 `node_modules/` is gitignored and installed locally by `setup.sh` / the
 `post-merge` hook.
