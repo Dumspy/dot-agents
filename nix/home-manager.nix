@@ -69,7 +69,7 @@
   # Build node_modules for Pi extensions with public npm deps
   piNodeModules = self.packages.${pkgs.stdenv.hostPlatform.system}.pi-node-modules;
 
-  # --- External Pi extensions (npm + file) ---
+  # --- External Pi extensions (single files from the registry) ---
   allExternalExtNames = builtins.attrNames piExternalExtRegistry;
   enabledExternalExts =
     if cfg.pi.externalExtensions == null
@@ -77,36 +77,14 @@
     else cfg.pi.externalExtensions;
   missingExternalExts = lib.filter (name: !lib.elem name allExternalExtNames) enabledExternalExts;
 
-  isFileExt = name: (piExternalExtRegistry.${name}.type or "npm") == "file";
-  enabledFileExts = lib.filter isFileExt enabledExternalExts;
-  enabledNpmExts = lib.filter (name: !(isFileExt name)) enabledExternalExts;
-
-  externalExtPkgs = lib.genAttrs enabledExternalExts (
-    name: self.packages.${pkgs.stdenv.hostPlatform.system}.${name}
-  );
-
-  # File-type extensions deploy as plain files into the extensions bundle,
+  # External extensions deploy as plain files into the extensions bundle,
   # alongside extraExtensions. Filenames must not collide with those.
   fileExtOverlaySources = lib.listToAttrs (map (name: {
       name = piExternalExtRegistry.${name}.filename;
-      value = externalExtPkgs.${name};
+      value = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
     })
-    enabledFileExts);
+    enabledExternalExts);
   overlappingOverlayNames = lib.intersectLists (builtins.attrNames fileExtOverlaySources) extraPiExtensionNames;
-
-  # The packages array we contribute to Pi's settings.json (npm only, with npm: prefix)
-  externalExtSettingsPackages = map (name: "npm:${piExternalExtRegistry.${name}.package}") enabledNpmExts;
-
-  externalExtSettingsJson = builtins.toJSON {
-    packages = externalExtSettingsPackages;
-  };
-
-  # Bare npm package names (no `npm:` prefix, no `@version` suffix) currently
-  # enabled. settings.json `packages` is managed authoritatively from this
-  # list, so removing an entry here (or from the registry) removes it from
-  # the machine on the next rebuild — no tombstone list needed.
-  enabledNpmBare = map (name: piExternalExtRegistry.${name}.package) enabledNpmExts;
-  enabledNpmBareJson = builtins.toJSON (lib.unique enabledNpmBare);
 
   piExtensionsBundle =
     pkgs.runCommand "dot-agents-pi-extensions-bundle" {
@@ -212,9 +190,39 @@
       chmod -R u+w "${destPath}"
     '';
 in {
-  imports = [./home-manager-common.nix];
-
   options.programs.dot-agents = {
+    enable = lib.mkEnableOption "dot-agents universal agent configuration";
+
+    skillDirs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        ".agents/skills"
+      ];
+      example = [
+        ".agents/skills"
+        ".pi/agent/skills"
+        ".config/opencode/skills"
+      ];
+      description = ''
+        Directories (relative to `$HOME`) into which each enabled skill's
+        definition is symlinked as `<dir>/<skill>/`. One entry per agent
+        harness that should discover the skills.
+
+        Default is `.agents/skills/` which both Pi and OpenCode support.
+      '';
+    };
+
+    agentDirs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        ".config/opencode/agents"
+      ];
+      description = ''
+        Directories (relative to `$HOME`) into which each enabled agent's
+        definition is symlinked.
+      '';
+    };
+
     pi = {
       extensions = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
@@ -300,9 +308,7 @@ in {
         default = [];
         description = ''
           External Pi extensions from the registry (see nix/pi-external-extensions.nix).
-          `npm`-type entries install from npm, deployed to
-          ~/.pi/agent/npm/node_modules/<name>/ and registered in settings.json.
-          `file`-type entries deploy a single file to ~/.pi/agent/extensions/.
+          Each entry deploys a single file to ~/.pi/agent/extensions/.
           Set to `null` to auto-discover all from the registry.
           Set to `[]` to disable external extensions (default).
         '';
@@ -374,12 +380,8 @@ in {
         message = "dot-agents: unknown external pi extension(s) requested: ${lib.concatStringsSep ", " missingExternalExts}. Available: ${lib.concatStringsSep ", " allExternalExtNames}";
       }
       {
-        assertion = lib.all (name: let t = piExternalExtRegistry.${name}.type or "npm"; in t == "npm" || t == "file") allExternalExtNames;
-        message = "dot-agents: external pi extension registry entries must have type \"npm\" or \"file\"";
-      }
-      {
         assertion = overlappingOverlayNames == [];
-        message = "dot-agents: file-type external extension(s) collide with extraExtensions filenames: ${lib.concatStringsSep ", " overlappingOverlayNames}";
+        message = "dot-agents: external extension(s) collide with extraExtensions filenames: ${lib.concatStringsSep ", " overlappingOverlayNames}";
       }
     ];
 
@@ -433,8 +435,8 @@ in {
       (lib.mkIf (cfg.structure == "link" && hasEnabledPiExtensions) {
         ".pi/agent/extensions".source = piExtensionsBundle;
       })
-      # Pi extension runtime dependencies (deploy if any local or external extensions enabled)
-      (lib.mkIf (hasEnabledPiExtensions || enabledNpmExts != []) {
+      # Pi extension runtime dependencies
+      (lib.mkIf hasEnabledPiExtensions {
         ".pi/agent/package.json".source = piDir + "/package.json";
         ".pi/agent/node_modules".source = piNodeModules + "/node_modules";
       })
@@ -453,13 +455,6 @@ in {
             value.source = "${piThemesDir}/${name}.json";
           })
           enabledPiThemes)
-      ))
-      (lib.mkIf (enabledNpmExts != []) (
-        lib.listToAttrs (map (name: {
-            name = ".pi/agent/npm/node_modules/${piExternalExtRegistry.${name}.package}";
-            value.source = "${externalExtPkgs.${name}}";
-          })
-          enabledNpmExts)
       ))
     ];
 
@@ -486,60 +481,6 @@ in {
         "install-dot-agents-pi-extensions" =
           mkRsyncActivation piExtensionsBundle "${config.home.homeDirectory}/.pi/agent/extensions" cfg.structure;
       })
-      # settings.json `packages` is managed authoritatively: exactly the
-      # enabled npm extensions, nothing else. Removing an entry from
-      # `externalExtensions` (or from the registry) removes it from
-      # settings.json on the next rebuild, so Pi never tries to
-      # `npm install` a stale package (hard `spawn npm ENOENT` crash when
-      # npm is not on PATH). Other settings.json keys are preserved.
-      # NOTE: packages installed manually via `pi install` are dropped on
-      # rebuild — declare them in nix/pi-external-extensions.nix instead.
-      {
-        "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
-          export PATH="${pkgs.jq}/bin:$PATH"
-          SETTINGS="${config.home.homeDirectory}/.pi/agent/settings.json"
-          OUR_PACKAGES='${externalExtSettingsJson}'
-          ENABLED_BARE='${enabledNpmBareJson}'
-
-          mkdir -p "$(dirname "$SETTINGS")"
-
-          if [ -f "$SETTINGS" ]; then
-            jq --argjson ours "$OUR_PACKAGES" \
-              '. as $s | $s + { packages: ($ours.packages | unique) }' \
-              "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
-          else
-            echo "$OUR_PACKAGES" > "$SETTINGS"
-          fi
-
-          chmod 644 "$SETTINGS"
-
-          # Prune Nix-deployed package symlinks that are no longer enabled
-          # (home.file leaves them behind). Only symlinks are touched, and
-          # only when they point into /nix/store or dangle — real
-          # directories (e.g. manually `pi install`ed) are never deleted.
-          # Nested paths (inside a package dir) are never touched either.
-          NPM_DIR="${config.home.homeDirectory}/.pi/agent/npm/node_modules"
-          if [ -d "$NPM_DIR" ]; then
-            find "$NPM_DIR" -maxdepth 2 -type l -print | while IFS= read -r link; do
-              rel="''${link#$NPM_DIR/}"
-              case "$rel" in
-                *?/*?/*) continue ;; # nested inside a package dir — never touch
-                @*/?*) : ;; # direct child of a scope dir — candidate
-                ?*/?*) continue ;; # inside a real top-level dir — never touch
-                *) : ;; # top-level — candidate
-              esac
-              if printf '%s' "$ENABLED_BARE" | jq -e --arg n "$rel" 'index($n) == null' >/dev/null; then
-                target=$(readlink "$link")
-                case "$target" in
-                  /nix/store/*) rm -f "$link" ;;
-                  *) [ -e "$link" ] || rm -f "$link" ;;
-                esac
-              fi
-            done
-            find "$NPM_DIR" -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null || true
-          fi
-        '';
-      }
     ];
   };
 }
