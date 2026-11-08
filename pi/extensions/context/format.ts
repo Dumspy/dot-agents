@@ -1,7 +1,6 @@
-import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
-export const BAR_CHARS = {
+const BAR_CHARS = {
 	full: "█",
 	empty: "░",
 };
@@ -25,19 +24,4 @@ export const padRight = (text: string, width: number): string => {
 	const vis = visibleWidth(text);
 	if (vis >= width) return text;
 	return text + " ".repeat(width - vis);
-};
-
-export const padLeft = (text: string, width: number): string => {
-	const vis = visibleWidth(text);
-	if (vis >= width) return text;
-	return " ".repeat(width - vis) + text;
-};
-
-export const borderLine = (
-	char: string,
-	width: number,
-	theme: Theme,
-	style: "accent" | "muted" | "border" = "border",
-): string => {
-	return theme.fg(style, char.repeat(Math.max(0, width)));
 };

@@ -1,5 +1,3 @@
-export const WEB_TOOLS_EXTENSION_NAME = "web-tools";
-
 export type WebFetchFormat = "markdown" | "text" | "html";
 export type ContentKind = "html" | "text" | "raster-image" | "svg" | "binary";
 
@@ -10,7 +8,6 @@ export interface WebToolsSettings {
 		maxResponseBytes: number;
 		blockPrivateHosts: boolean;
 		maxRedirects: number;
-		fallbackUserAgent: string;
 	};
 }
 

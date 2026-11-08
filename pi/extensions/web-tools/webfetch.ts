@@ -13,14 +13,14 @@ import {
 	readBodyWithLimit,
 } from "./network.ts";
 import { appendExpandHint, appendExpandedPreview, getTextContent } from "./render.ts";
-import { getWebToolsSettings } from "./settings.ts";
+import { WEB_TOOLS_SETTINGS } from "./settings.ts";
 import { truncateTextOutput } from "./truncation.ts";
 import type { WebFetchDetails, WebFetchFormat } from "./types.ts";
 
 const WEBFETCH_FORMATS = ["text", "markdown", "html"] as const;
 export const OPENCODE_WEBFETCH_DEFAULT_USER_AGENT =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
-export const OPENCODE_WEBFETCH_FALLBACK_USER_AGENT = "opencode";
+const OPENCODE_WEBFETCH_FALLBACK_USER_AGENT = "opencode";
 
 export function createWebFetchTool() {
 	return {
@@ -48,7 +48,7 @@ export function createWebFetchTool() {
 		}),
 
 		async execute(_toolCallId: string, params: { url: string; format?: WebFetchFormat; timeout?: number }, signal?: AbortSignal, onUpdate?: (...args: any[]) => void) {
-			const settings = getWebToolsSettings();
+			const settings = WEB_TOOLS_SETTINGS;
 			const requestedUrl = normalizeAndValidateUrl(params.url);
 			const format = params.format ?? settings.fetch.defaultFormat;
 			const timeoutSeconds = clampTimeoutSeconds(params.timeout ?? settings.fetch.timeoutSeconds);
@@ -79,7 +79,7 @@ export function createWebFetchTool() {
 
 				if (shouldRetryWithFallbackUserAgent(response)) {
 					await response.body?.cancel().catch(() => undefined);
-					const retryHeaders = createWebFetchHeaders(accept, getFallbackUserAgent(settings.fetch.fallbackUserAgent));
+					const retryHeaders = createWebFetchHeaders(accept, OPENCODE_WEBFETCH_FALLBACK_USER_AGENT);
 					({ response, finalUrl } = await fetchWithRedirects(requestedUrl, {
 						headers: retryHeaders,
 						signal: composed.signal,
@@ -242,11 +242,6 @@ export function createWebFetchHeaders(accept: string, userAgent = OPENCODE_WEBFE
 		Accept: accept,
 		"Accept-Language": "en-US,en;q=0.9",
 	};
-}
-
-export function getFallbackUserAgent(configuredUserAgent?: string): string {
-	const trimmed = configuredUserAgent?.trim();
-	return trimmed || OPENCODE_WEBFETCH_FALLBACK_USER_AGENT;
 }
 
 export function shouldRetryWithFallbackUserAgent(response: Pick<Response, "status" | "headers">): boolean {
