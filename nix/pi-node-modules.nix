@@ -37,15 +37,18 @@ in
 
     # NOTE: update this hash after changing dependencies in pi/package.json.
     # Because npm ci downloads platform-specific optional binaries (e.g. darwin-arm64 vs linux-x64),
-    # the outputHash differs by platform. Add a new entry when building on a new system.
-    # Run: nix build --impure --expr 'let pkgs = import <nixpkgs> {}; in pkgs.callPackage ./nix/pi-node-modules.nix {}' --rebuild 2>&1 | grep 'got:'
+    # the outputHash differs by platform. Systems without an entry fall back to
+    # lib.fakeHash: the flake still evaluates (`flake check --all-systems`), and
+    # building there fails with the real hash to add.
+    # Run: nix build .#pi-node-modules --rebuild 2>&1 | grep 'got:'
+    # (--rebuild matters: without it, Nix reuses the old fixed-output path.)
     outputHash =
       {
         x86_64-linux = "sha256-cmvpRKmlIMj1aZpkJdgIcKwljpA6r7K3guHuyccgy+4=";
         aarch64-darwin = "sha256-PtBks4rbsAMXeF9x2eoJJivfz/NYxPeAGC/MCLBt8pU=";
       }.${
         system
-      } or (throw "dot-agents pi-node-modules: no outputHash for platform ${system}. Run the build to get the 'got:' hash and add it here.");
+      } or pkgs.lib.fakeHash;
     outputHashAlgo = "sha256";
     outputHashMode = "recursive";
     dontFixup = true;
