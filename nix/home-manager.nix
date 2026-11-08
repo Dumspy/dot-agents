@@ -51,8 +51,9 @@
     then builtins.readDir piExtensionsDir
     else {};
   piExtensionFiles = builtins.attrNames piExtensionEntries;
+  isTestFile = f: lib.hasSuffix ".test.ts" f || lib.hasSuffix ".spec.ts" f;
   piExtensionNames = let
-    fileNames = map (f: lib.removeSuffix ".ts" f) (lib.filter (f: lib.hasSuffix ".ts" f) piExtensionFiles);
+    fileNames = map (f: lib.removeSuffix ".ts" f) (lib.filter (f: lib.hasSuffix ".ts" f && !isTestFile f) piExtensionFiles);
     dirNames = lib.attrNames (lib.filterAttrs (n: v: v == "directory") piExtensionEntries);
   in
     fileNames ++ dirNames;
@@ -61,6 +62,12 @@
     then piExtensionNames
     else cfg.pi.extensions;
   missingPiExtensions = lib.filter (name: !lib.elem name piExtensionNames) enabledPiExtensions;
+  # Bundle source for an extension name: `<name>/` for folder extensions,
+  # `<name>.ts` for flat files.
+  piExtensionSource = name:
+    if piExtensionEntries.${name} or null == "directory"
+    then name
+    else "${name}.ts";
   extraPiExtensionNames = lib.attrNames cfg.pi.extraExtensions;
   overlayExtensionSources = cfg.pi.extraExtensions // fileExtOverlaySources;
   overlayExtensionNames = builtins.attrNames overlayExtensionSources;
@@ -114,13 +121,16 @@
       nativeBuildInputs = [pkgs.rsync];
     } ''
       mkdir -p $out
-      # Copy extension files excluding tests and their dev-only deps
-      rsync -aL \
-        --exclude='*.test.ts' --exclude='*.test.js' \
-        --exclude='*.spec.ts' --exclude='*.spec.js' \
-        --exclude='*.test.tsx' --exclude='*.spec.tsx' \
-        --exclude='test/' --exclude='__tests__/' \
-        ${piExtensionsDir}/ $out/
+      # Copy only the enabled extensions, excluding tests and their dev-only deps
+      ${lib.optionalString (enabledPiExtensions != []) ''
+        rsync -aL \
+          --exclude='*.test.ts' --exclude='*.test.js' \
+          --exclude='*.spec.ts' --exclude='*.spec.js' \
+          --exclude='*.test.tsx' --exclude='*.spec.tsx' \
+          --exclude='test/' --exclude='__tests__/' \
+          ${lib.concatMapStringsSep " " (name: "${piExtensionsDir}/${piExtensionSource name}") enabledPiExtensions} \
+          $out/
+      ''}
       chmod -R u+w $out
       # Overlay declarative extension sources (extraExtensions + file-type
       # external extensions) after the auto-discovered bundle.
