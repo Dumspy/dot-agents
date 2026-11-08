@@ -44,7 +44,7 @@ in
     # (--rebuild matters: without it, Nix reuses the old fixed-output path.)
     outputHash =
       {
-        x86_64-linux = "sha256-cmvpRKmlIMj1aZpkJdgIcKwljpA6r7K3guHuyccgy+4=";
+        x86_64-linux = "sha256-tW48lTgvCkdg98mFgfdMmLhTzFKMcrCCeTWcSNCLYQY=";
         aarch64-darwin = "sha256-PtBks4rbsAMXeF9x2eoJJivfz/NYxPeAGC/MCLBt8pU=";
       }.${
         system
