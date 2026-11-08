@@ -2,6 +2,7 @@
 # Auto-discovers and installs all skills, agents, commands, and extensions.
 {
   self,
+  auxera,
   externalSources,
 }: {
   config,
@@ -172,6 +173,14 @@
   # Merge user commands with discovered commands (user takes precedence)
   allCommands = discoveredCommands // cfg.opencode.commands;
 
+  opensrcMcp = self.packages.${pkgs.stdenv.hostPlatform.system}.opensrc-mcp;
+
+  # Prefer the consumer's Auxera overlay, so packages build against its
+  # nixpkgs. Fall back to the flake's own builds.
+  auxeraPkg = name: pkgs.auxera.${name} or auxera.packages.${pkgs.stdenv.hostPlatform.system}.${name};
+
+  piSettingsFile = (pkgs.formats.json {}).generate "pi-settings.json" cfg.pi.settings;
+
   # --- Bundles ---
   skillsBundle = pkgs.runCommand "dot-agents-skills-bundle" {preferLocalBuild = true;} ''
     mkdir -p $out
@@ -212,10 +221,37 @@
       chmod -R u+w "${destPath}"
     '';
 in {
-  imports = [./home-manager-common.nix];
+  imports = [
+    ./home-manager-common.nix
+    auxera.homeManagerModules.default
+  ];
 
   options.programs.dot-agents = {
     pi = {
+      enable = lib.mkEnableOption "the Pi coding agent";
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = auxeraPkg "pi";
+        defaultText = lib.literalExpression "pkgs.auxera.pi";
+        description = "Pi package to install.";
+      };
+
+      settings = lib.mkOption {
+        inherit ((pkgs.formats.json {})) type;
+        default = {
+          defaultProvider = "opencode-go";
+          enableInstallTelemetry = false;
+          theme = "catppuccin-macchiato";
+        };
+        description = ''
+          Initial contents of {file}`~/.pi/agent/settings.json`. Written only
+          when the file does not exist: Pi edits it at runtime, and the
+          `packages` key is managed from `externalExtensions`.
+          See <https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/settings.md>.
+        '';
+      };
+
       extensions = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.str);
         default = null;
@@ -345,6 +381,18 @@ in {
           Each entry is a name -> path mapping for opencode commands.
         '';
       };
+
+      enable = lib.mkEnableOption ''
+        OpenCode, with the `grep_app` and `opensrc` MCP servers the librarian
+        agent relies on, read/bash permission rules, and the notifier plugin
+      '';
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = auxeraPkg "opencode";
+        defaultText = lib.literalExpression "pkgs.auxera.opencode";
+        description = "OpenCode package to install.";
+      };
     };
 
     structure = lib.mkOption {
@@ -382,6 +430,84 @@ in {
         message = "dot-agents: file-type external extension(s) collide with extraExtensions filenames: ${lib.concatStringsSep ", " overlappingOverlayNames}";
       }
     ];
+
+    home.packages = lib.mkIf cfg.pi.enable [cfg.pi.package];
+
+    programs.opencode-notifier-plugin.enable = lib.mkIf cfg.opencode.enable true;
+
+    programs.opencode = lib.mkIf cfg.opencode.enable {
+      enable = true;
+      inherit (cfg.opencode) package;
+
+      settings = {
+        autoupdate = false;
+
+        formatter = {
+          alejandra = {
+            command = [
+              "alejandra"
+              "$FILE"
+            ];
+            extensions = [".nix"];
+          };
+        };
+
+        mcp = {
+          grep_app = {
+            type = "remote";
+            url = "https://mcp.grep.app";
+          };
+          opensrc = {
+            type = "local";
+            command = [(lib.getExe opensrcMcp)];
+          };
+        };
+
+        permission = {
+          read = {
+            "*" = "allow";
+            # Secrets & credentials
+            ".direnv/*" = "deny";
+            ".env" = "deny";
+            "*.env" = "deny";
+            "*.env.*" = "deny";
+            "*.envrc" = "deny";
+            "secrets/*" = "deny";
+            # Private keys & auth
+            ".ssh/*" = "deny";
+            ".gnupg/*" = "deny";
+            ".config/1password/*" = "deny";
+            "*.key" = "deny";
+            "*.pem" = "deny";
+            "*.p12" = "deny";
+            "*.pfx" = "deny";
+            # Cloud/container credentials
+            ".aws/*" = "deny";
+            ".docker/*" = "deny";
+            ".kube/*" = "deny";
+            # Version control internals
+            ".git/*" = "deny";
+            ".gitmodules" = "deny";
+            # Build artifacts (large, noisy)
+            "node_modules/*" = "deny";
+            ".venv/*" = "deny";
+            "venv/*" = "deny";
+            "dist/*" = "deny";
+            "build/*" = "deny";
+            "target/*" = "deny";
+          };
+          webfetch = "ask";
+          bash = {
+            "*" = "ask";
+            "ls*" = "allow";
+            "pwd" = "allow";
+            "git status*" = "allow";
+            "git diff*" = "allow";
+            "git log*" = "allow";
+          };
+        };
+      };
+    };
 
     # --- home.file ---
     home.file = lib.mkMerge [
@@ -494,8 +620,27 @@ in {
       # npm is not on PATH). Other settings.json keys are preserved.
       # NOTE: packages installed manually via `pi install` are dropped on
       # rebuild — declare them in nix/pi-external-extensions.nix instead.
+      (lib.mkIf cfg.pi.enable {
+        # Runs before the `packages` merge below, which would otherwise
+        # create the file first and stop these settings from being written.
+        "install-dot-agents-pi-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          SETTINGS="${config.home.homeDirectory}/.pi/agent/settings.json"
+          mkdir -p "$(dirname "$SETTINGS")"
+
+          if [ -L "$SETTINGS" ]; then
+            # Convert an old store symlink to a real file so Pi can edit it
+            cp -L "$SETTINGS" "$SETTINGS.tmp"
+            mv "$SETTINGS.tmp" "$SETTINGS"
+          fi
+
+          if [ ! -f "$SETTINGS" ]; then
+            cp ${piSettingsFile} "$SETTINGS"
+            chmod 644 "$SETTINGS"
+          fi
+        '';
+      })
       {
-        "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary"] ''
+        "install-dot-agents-pi-external-extensions-settings" = lib.hm.dag.entryAfter ["writeBoundary" "install-dot-agents-pi-settings"] ''
           export PATH="${pkgs.jq}/bin:$PATH"
           SETTINGS="${config.home.homeDirectory}/.pi/agent/settings.json"
           OUR_PACKAGES='${externalExtSettingsJson}'
