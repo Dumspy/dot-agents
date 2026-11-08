@@ -6,14 +6,15 @@ This directory contains TypeScript extensions for the [Pi Coding Agent](https://
 
 ```
 pi/
-├── package.json              # Workspace root (private, not published)
-├── tsconfig.json             # TypeScript config
+├── package.json              # Shared deps for all extensions (private, not published)
+├── tsconfig.json             # TypeScript config for `npm run check`
 ├── AGENTS.md                 # This file
 └── extensions/
-    └── permission-system/         # Multi-file extension
+    ├── notify.ts                  # Flat-file extension
+    └── permission-system/         # Folder extension
         ├── index.ts               # Extension entry point
         ├── lib.ts                 # Pure logic (testable)
-        └── test.ts                # Unit tests
+        └── lib.test.ts            # Unit tests
 ```
 
 **Flat file:** single `.ts` file directly in `extensions/`. Use this for simple extensions.  
@@ -45,14 +46,14 @@ npm test             # Run all tests once
 npm run test:watch   # Watch mode
 ```
 
-Tests use [Vitest](https://vitest.dev/). We test pure logic extracted into `.lib.ts` files. Extension event handlers that depend on Pi's `ExtensionAPI` are not unit-tested — type checking is the safety net for those.
+Tests use [Vitest](https://vitest.dev/). We test pure logic extracted out of `index.ts` (usually into `lib.ts`). Extension event handlers that depend on Pi's `ExtensionAPI` are not unit-tested — type checking is the safety net for those.
 
 ## Adding a New Extension
 
-1. Create `pi/extensions/my-extension.ts`
+1. Create `pi/extensions/my-extension.ts`, or `pi/extensions/my-extension/index.ts` if it needs tests or more than one file
 2. Import types from `@earendil-works/pi-coding-agent`
-3. Extract any complex pure logic into `my-extension.lib.ts`
-4. Add tests in `my-extension.test.ts`
+3. Extract any complex pure logic into `my-extension/lib.ts`
+4. Add tests in `my-extension/lib.test.ts`
 5. Run `npm run check` and `npm test` to validate
 6. The Nix module auto-deploys extensions on the next Home Manager rebuild
 
@@ -70,24 +71,25 @@ export default function myExtension(pi: ExtensionAPI) {
 }
 ```
 
-### Complex extension (with dependencies)
+### Extension with npm dependencies
 
-```
-pi/extensions/advanced-ext/
-├── package.json
-└── index.ts
-```
+There are no per-extension `package.json` files. All extensions share
+`pi/package.json`:
 
 ```bash
 cd pi
-npm install some-lib --workspace=extensions/advanced-ext
+npm install some-lib
 ```
+
+Then update the `outputHash` entries in `nix/pi-node-modules.nix` (the file
+explains how to get the new hash).
 
 ## Nix Integration
 
 The Home Manager module installs extensions to `~/.pi/agent/extensions/` for end users.
-The workspace root (`package.json`, `tsconfig.json`, `node_modules`) is **only for local
-development** and is not shipped to dependants.
+It also deploys `package.json` and the locked `node_modules` (built by
+`nix/pi-node-modules.nix`) to `~/.pi/agent/`, so extensions can resolve their imports.
+`tsconfig.json` and the tests are only for local development and are not shipped.
 
 ## External Extensions
 
