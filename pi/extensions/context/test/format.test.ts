@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderBar, padRight, padLeft } from "../format.ts";
+import { renderBar, padRight } from "../format.ts";
 
 const identity = (s: string) => s;
 
@@ -58,15 +58,5 @@ describe("padRight", () => {
 	it("handles ANSI codes", () => {
 		const text = "\x1b[31mhi\x1b[0m";
 		expect(padRight(text, 5)).toBe("\x1b[31mhi\x1b[0m   ");
-	});
-});
-
-describe("padLeft", () => {
-	it("pads with spaces on the left", () => {
-		expect(padLeft("hi", 5)).toBe("   hi");
-	});
-
-	it("returns unchanged if already wide enough", () => {
-		expect(padLeft("hello", 5)).toBe("hello");
 	});
 });

@@ -1,4 +1,4 @@
-import { convert as convertHtmlToText, compile as compileHtmlToText } from "html-to-text";
+import { compile as compileHtmlToText } from "html-to-text";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 // turndown-plugin-gfm does not ship ESM-friendly typings.
@@ -144,10 +144,6 @@ export function htmlToText(rawHtml: string, baseUrl: string): string {
 	const sanitizedHtml = sanitizeHtml(rawHtml, baseUrl);
 	const text = htmlToTextConverter(sanitizedHtml);
 	return cleanupText(text);
-}
-
-export function htmlToTextFallback(rawHtml: string): string {
-	return cleanupText(convertHtmlToText(rawHtml, { wordwrap: false }));
 }
 
 export function isPoorMarkdownConversion(markdown: string): boolean {
