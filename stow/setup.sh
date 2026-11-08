@@ -24,7 +24,7 @@ chmod +x .git/hooks/post-merge
 # Run the initial install now.
 if [ -f .pi/agent/package-lock.json ]; then
   echo "[dot-agents] Installing Pi extension dependencies..."
-  (cd .pi/agent && npm ci)
+  (cd .pi/agent && npm ci --omit=dev)
 fi
 
 # settings.json `packages` is managed authoritatively from EXTERNAL_PI_PACKAGES:

@@ -22,7 +22,8 @@ in
 
       cp $src/package.json ./package.json
       cp $src/package-lock.json ./package-lock.json
-      npm ci --ignore-scripts --cache $TMPDIR/.npm
+      # Runtime deps only: typescript/vitest are for local development.
+      npm ci --omit=dev --ignore-scripts --cache $TMPDIR/.npm
 
       runHook postBuild
     '';
@@ -41,8 +42,7 @@ in
     outputHash =
       {
         x86_64-linux = "sha256-cmvpRKmlIMj1aZpkJdgIcKwljpA6r7K3guHuyccgy+4=";
-        aarch64-darwin = "sha256-nroFGUOjw0vE2+PLhgKtWXcEcto4ruHKvEeWEtpZhJ8=";
-        aarch64-linux = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        aarch64-darwin = "sha256-PtBks4rbsAMXeF9x2eoJJivfz/NYxPeAGC/MCLBt8pU=";
       }.${
         system
       } or (throw "dot-agents pi-node-modules: no outputHash for platform ${system}. Run the build to get the 'got:' hash and add it here.");
