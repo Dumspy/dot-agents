@@ -17,6 +17,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Pi and OpenCode packages, and the opencode-notifier-plugin module.
+    # Consumers that also use Auxera should set:
+    #   inputs.<name>.inputs.auxera.follows = "auxera";
+    auxera.url = "github:Auxera/nixpkgs";
+
     # External skill sources
     anthropics-agent-skills = {
       url = "github:anthropics/skills";
@@ -29,6 +34,7 @@
     nixpkgs,
     home-manager,
     git-hooks,
+    auxera,
     anthropics-agent-skills,
   }: let
     # x86_64-darwin is not listed: nixpkgs 26.11 dropped it, and
@@ -73,6 +79,7 @@
             inherit pkgs lib self externalSources;
           };
           pi-node-modules = pkgs.callPackage ./nix/pi-node-modules.nix {};
+          opensrc-mcp = pkgs.callPackage ./nix/opensrc-mcp.nix {};
         }
     );
 
@@ -122,6 +129,6 @@
       };
     });
 
-    homeModules.default = import ./nix/home-manager.nix {inherit self externalSources;};
+    homeModules.default = import ./nix/home-manager.nix {inherit self auxera externalSources;};
   };
 }
