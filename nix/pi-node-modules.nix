@@ -40,8 +40,9 @@ in
     # the outputHash differs by platform. Systems without an entry fall back to
     # lib.fakeHash: the flake still evaluates (`flake check --all-systems`), and
     # building there fails with the real hash to add.
-    # Run: nix build .#pi-node-modules --rebuild 2>&1 | grep 'got:'
-    # (--rebuild matters: without it, Nix reuses the old fixed-output path.)
+    # New platform: nix build .#pi-node-modules 2>&1 | grep 'got:'
+    # Existing entry after a deps change: add --rebuild. Without it, Nix reuses
+    # the old fixed-output path from the store and never reports a mismatch.
     outputHash =
       {
         x86_64-linux = "sha256-tW48lTgvCkdg98mFgfdMmLhTzFKMcrCCeTWcSNCLYQY=";
