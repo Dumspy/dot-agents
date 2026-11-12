@@ -12,5 +12,5 @@ git reset --hard origin/stow
 # dependencies manually when the lockfile changes.
 if [ -f .pi/agent/package-lock.json ]; then
   echo "[dot-agents] Installing Pi extension dependencies..."
-  (cd .pi/agent && npm ci)
+  (cd .pi/agent && npm ci --omit=dev)
 fi
